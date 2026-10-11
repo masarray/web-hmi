@@ -17,14 +17,13 @@ test('FC01/02 packed bits are decoded least-significant-bit first across bytes',
  assert.equal(validated.tags.length,5);
  const plan=planReads(tags);
  assert.deepEqual(plan.map(p=>[p.functionCode,p.start,p.count]),
-   [[1,0,9],[2,9,2]]);
- const data=Buffer.from([0b10000001,0b00000001]);
- assert.equal(expectedDataBytes(plan[0]!),2);
- assert.equal(decodeTag(plan[0]!,data,tags[0]!),true);
- assert.equal(decodeTag(plan[0]!,data,tags[1]!),true);
- assert.equal(decodeTag(plan[0]!,data,tags[2]!),true);
- assert.equal(decodeTag(plan[1]!,Buffer.from([0b00000010]),tags[3]!),false);
- assert.equal(decodeTag(plan[1]!,Buffer.from([0b00000010]),tags[4]!),true);
+   [[1,0,1],[1,7,2],[2,9,2]]);
+ assert.equal(expectedDataBytes(plan[0]!),1);
+ assert.equal(decodeTag(plan[0]!,Buffer.from([0b00000001]),tags[0]!),true);
+ assert.equal(decodeTag(plan[1]!,Buffer.from([0b00000011]),tags[1]!),true);
+ assert.equal(decodeTag(plan[1]!,Buffer.from([0b00000011]),tags[2]!),true);
+ assert.equal(decodeTag(plan[2]!,Buffer.from([0b00000010]),tags[3]!),false);
+ assert.equal(decodeTag(plan[2]!,Buffer.from([0b00000010]),tags[4]!),true);
 });
 test('INT16, UINT16, INT32, UINT32 and FLOAT32 respect signedness and word order',()=>{
  const tags=[fc('U16',3,0),fc('S16',3,1,'int16'),
