@@ -10,6 +10,7 @@ test('Shift-select layers and align objects with one undo',async({page})=>{
   await layer(page,'CB Bay A').click();
   await layer(page,'CB Bay B').click({modifiers:['Shift']});
   await expect(page.getByText('2 objects selected')).toBeVisible();
+  await page.screenshot({path:'test-results/editor-multiselect.png',fullPage:true});
   await expect(page.getByRole('button',{name:'Left',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Left',exact:true}).click();
   await expect(shape(page,'cb-b')).toHaveAttribute('transform','translate(247,265)');
