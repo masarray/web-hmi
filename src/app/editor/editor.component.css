@@ -69,3 +69,13 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 .empty-inspector p{margin:7px 0}
 .inspector-section .danger{margin-top:6px}
 .sidebar-tip,.empty-inspector p{overflow-wrap:break-word}
+
+/* Multi-select operations stay in the contextual inspector, not a floating modal. */
+.selection-pill{font-size:10px;color:#bfe5f3;background:#244658;border:1px solid #35667a;border-radius:3px;padding:4px 7px;white-space:nowrap}
+.selection-heading p{font-size:11px;color:#a2bbc8;line-height:1.5;margin:0 0 11px}
+.selection-heading button{background:#213a48;border:1px solid #36566b;color:#bfdae6;width:100%;text-align:center}
+.align-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.align-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.align-grid button{font-size:11px;background:#203744;border:1px solid #385469;text-align:center;padding:9px 2px;min-width:0;color:#bdd5e1}
+.align-grid button:hover,.selection-heading button:hover{background:#2b4b5c;border-color:#5c91a9}
+.sidebar-tip b{font-weight:600;color:#c0e8f3}

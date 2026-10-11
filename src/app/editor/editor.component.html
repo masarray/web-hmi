@@ -34,11 +34,13 @@
           </button>
         }
       </div>
-      <div class="sidebar-tip">Tip: drag a tool onto the canvas or click to add. Select an object to edit it.</div>
+      <div class="sidebar-tip">Tip: click an object to edit. Hold <b>Shift</b> and click to select several objects, then align them in the right panel.</div>
       <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
       <div class="layers">
         @for(shape of activePage().shapes;track shape.id){
-          <button type="button" [class.active]="shape.id===selectedId()" (click)="selectedId.set(shape.id)">
+          <button type="button" [class.active]="selectedIds().includes(shape.id)"
+            [attr.aria-pressed]="selectedIds().includes(shape.id)"
+            (click)="selectFromEvent(shape.id,$event)">
             <span class="layer-icon">◇</span><span class="ellipsize">{{shape.name}}</span>
             @if(shape.tagId){<span class="tag-mark" title="Has tag metadata">T</span>}
           </button>
@@ -49,8 +51,12 @@
     <main class="center">
       <div class="canvas-toolbar">
         <span class="mode-pill">◇ SVG EDITOR</span>
-        <span class="hint">Drag from library to place · select, move and resize on canvas</span>
+        <span class="hint">Shift+click: multi-select · drag selection to move · Ctrl+A: select all</span>
         <span class="grow"></span>
+        <button type="button" (click)="selectAll()" title="Select all objects (Ctrl+A)">Select all</button>
+        @if(selectionCount()>0){
+          <span class="selection-pill">{{selectionCount()}} selected</span>
+        }
         <button type="button" [class.on]="gridVisible()" (click)="toggleGrid()">Grid</button>
         <button type="button" [class.on]="snapEnabled()" (click)="toggleSnap()">Snap</button>
         <span class="separator"></span>
@@ -76,7 +82,8 @@
               <rect width="1200" height="700" fill="url(#canvas-grid)" pointer-events="none"/>
             }
             @for(shape of activePage().shapes;track shape.id){
-              <g class="canvas-node" [attr.transform]="'translate('+displayX(shape)+','+displayY(shape)+')'"
+              <g class="canvas-node" [attr.data-shape-id]="shape.id"
+                [attr.transform]="'translate('+displayX(shape)+','+displayY(shape)+')'"
                 (pointerdown)="beginDrag($event,shape)">
                 @switch(shape.kind){
                   @case('rect'){
@@ -105,11 +112,11 @@
                       [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
                   }
                 }
-                @if(selectedId()===shape.id && !previewMode()){
+                @if(selectedIds().includes(shape.id) && !previewMode()){
                   <rect x="-6" y="-6" [attr.width]="displayWidth(shape)+12" [attr.height]="displayHeight(shape)+12"
                     fill="none" stroke="#ffca74" stroke-width="1.8" stroke-dasharray="5 4"
                     pointer-events="none"/>
-                  @if(shape.kind!=='text'){
+                  @if(shape.kind!=='text' && selectionCount()===1){
                     <circle class="resize-handle" [attr.cx]="displayWidth(shape)" [attr.cy]="displayHeight(shape)"
                       r="9" fill="#ffce7a" stroke="#24343d" stroke-width="2"
                       (pointerdown)="beginResize($event,shape)">
@@ -127,7 +134,38 @@
 
     <aside class="inspector">
       <div class="pane-heading">PROPERTIES</div>
-      @if(selected();as shape){
+      @if(selectionCount()>1){
+        <div class="inspector-section selection-heading">
+          <h3>MULTI-SELECTION</h3>
+          <p>{{selectionCount()}} objects selected. Shift+click to add/remove, or drag selected objects together.</p>
+          <button type="button" (click)="selectOnly(null)">Clear selection</button>
+        </div>
+        <div class="inspector-section">
+          <h3>ALIGN OBJECTS</h3>
+          <div class="align-grid">
+            <button type="button" (click)="alignSelection('left')" title="Align left edges">Left</button>
+            <button type="button" (click)="alignSelection('center')" title="Align horizontal centers">Center</button>
+            <button type="button" (click)="alignSelection('right')" title="Align right edges">Right</button>
+            <button type="button" (click)="alignSelection('top')" title="Align top edges">Top</button>
+            <button type="button" (click)="alignSelection('middle')" title="Align vertical centers">Middle</button>
+            <button type="button" (click)="alignSelection('bottom')" title="Align bottom edges">Bottom</button>
+          </div>
+        </div>
+        @if(selectionCount()>=3){
+          <div class="inspector-section">
+            <h3>DISTRIBUTE EVENLY</h3>
+            <p class="helper">Spread object centers evenly while keeping the outermost positions.</p>
+            <div class="align-grid two">
+              <button type="button" (click)="distributeSelection('horizontal')">Horizontal</button>
+              <button type="button" (click)="distributeSelection('vertical')">Vertical</button>
+            </div>
+          </div>
+        }
+        <div class="inspector-section">
+          <button type="button" class="danger" (click)="removeSelected()">Delete {{selectionCount()}} selected objects</button>
+          <p class="helper">Undo restores all changes in one step.</p>
+        </div>
+      } @else if(selected();as shape){
         <div class="inspector-section">
           <label>Object name<input type="text" [value]="shape.name" maxlength="100" (change)="updateProperty('name',$event)"></label>
           <div class="helper">{{shape.kind}} · {{shape.id}}</div>

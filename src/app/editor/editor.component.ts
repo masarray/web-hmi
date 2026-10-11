@@ -3,9 +3,10 @@ import { ChangeDetectionStrategy, Component, ElementRef, HostListener,
 import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
   newShape, insertShape, editShape, deleteShape, createPage } from './document';
 import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } from './actions';
+import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align, type Axis } from './selection-ops';
 
 const STORAGE_KEY='web-hmi.project.v1';
-type Drag={id:string;pointerId:number;startX:number;startY:number;original:Shape;mode:'move'|'resize'};
+type Drag={id:string;pointerId:number;startX:number;startY:number;original:Shape;members:Shape[];mode:'move'|'resize'};
 type DragPreview={id:string;x:number;y:number;width:number;height:number};
 
 @Component({
@@ -17,7 +18,9 @@ type DragPreview={id:string;x:number;y:number;width:number;height:number};
 export class EditorComponent {
   @ViewChild('viewport') viewport?:ElementRef<SVGSVGElement>;
   readonly project=signal<Project>(this.restore());
-  readonly selectedId=signal<string|null>(null);
+  readonly selectedIds=signal<string[]>([]);
+  readonly selectedId=computed(()=>this.selectedIds().length===1?this.selectedIds()[0]??null:null);
+  readonly selectionCount=computed(()=>this.selectedIds().length);
   readonly snapEnabled=signal(true);
   readonly gridVisible=signal(true);
   readonly previewMode=signal(false);
@@ -30,6 +33,7 @@ export class EditorComponent {
   readonly selected=computed(()=>
     this.activePage().shapes.find(s=>s.id===this.selectedId())??null);
   readonly preview=signal<DragPreview|null>(null);
+  readonly dragOffsets=signal<Record<string,{x:number;y:number}>>({});
   readonly palette:{kind:ShapeKind;label:string;glyph:string}[]=[
     {kind:'rect',label:'Rectangle',glyph:'▭'},
     {kind:'ellipse',label:'Ellipse',glyph:'◯'},
@@ -61,6 +65,7 @@ export class EditorComponent {
     if (this.past.length>60) this.past.shift();
     this.future=[];
     this.project.set(next);
+    this.pruneSelection();
     this.canUndo.set(true);
     this.canRedo.set(false);
     this.persist();
@@ -70,6 +75,7 @@ export class EditorComponent {
     if (!previous) return;
     this.future.push(this.project());
     this.project.set(previous);
+    this.pruneSelection();
     this.canUndo.set(this.past.length>0);
     this.canRedo.set(true);
     this.persist();
@@ -87,8 +93,41 @@ export class EditorComponent {
     try {
       const shape=newShape(kind,this.activePage().shapes.length);
       this.record(insertShape(this.project(),shape));
-      this.selectedId.set(shape.id);
+      this.selectOnly(shape.id);
     } catch(error) { this.status.set(String(error)); }
+  }
+
+
+  /** Selection is UI-only, not written into the versioned project. */
+  selectOnly(id:string|null):void{this.selectedIds.set(id?[id]:[]);}
+  selectFromEvent(id:string,e:MouseEvent|PointerEvent):void{
+    if(this.previewMode())return;
+    if(e.shiftKey||e.ctrlKey||e.metaKey){
+      this.selectedIds.update(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
+    }else if(!this.selectedIds().includes(id)||this.selectedIds().length!==1){
+      this.selectOnly(id);
+    }
+  }
+  selectAll():void{
+    if(!this.previewMode())this.selectedIds.set(this.activePage().shapes.map(s=>s.id));
+  }
+  alignSelection(mode:Align):void{
+    if(this.previewMode()||this.selectionCount()<2)return;
+    try{
+      this.record(alignObjects(this.project(),this.selectedIds(),mode));
+      this.status.set('Aligned '+this.selectionCount()+' objects');
+    }catch(error){this.status.set(String(error));}
+  }
+  distributeSelection(axis:Axis):void{
+    if(this.previewMode()||this.selectionCount()<3)return;
+    try{
+      this.record(distributeObjects(this.project(),this.selectedIds(),axis));
+      this.status.set('Distributed '+this.selectionCount()+' objects');
+    }catch(error){this.status.set(String(error));}
+  }
+  private pruneSelection():void{
+    const valid=new Set(this.activePage().shapes.map(s=>s.id));
+    this.selectedIds.update(ids=>ids.filter(id=>valid.has(id)));
   }
 
   /** Quick actions keep the operator flow in one workspace. */
@@ -98,7 +137,7 @@ export class EditorComponent {
     try {
       const next=duplicateShape(this.project(),id);
       this.record(next.project);
-      this.selectedId.set(next.newId);
+      this.selectOnly(next.newId);
       this.status.set('Object duplicated · click to move it');
     } catch(error) { this.status.set(String(error)); }
   }
@@ -120,7 +159,7 @@ export class EditorComponent {
   removePage():void {
     try{
       this.record(deletePage(this.project(),this.project().activePageId));
-      this.selectedId.set(null);
+      this.selectOnly(null);
       this.status.set('Page removed · Undo can restore it');
     }catch(error){this.status.set(String(error));}
   }
@@ -146,39 +185,42 @@ export class EditorComponent {
       y:this.round(Math.max(0,Math.min(700-shape.height,point.y-shape.height/2)))};
     try{
       this.record(insertShape(this.project(),placed));
-      this.selectedId.set(shape.id);
+      this.selectOnly(shape.id);
       this.status.set('Object placed · drag to reposition or edit properties');
     }catch(error){this.status.set(String(error));}
   }
 
-  removeSelected():void {
-    const id=this.selectedId();
-    if (!id) return;
-    this.record(deleteShape(this.project(),id));
-    this.selectedId.set(null);
+  removeSelected():void{
+    if(!this.selectionCount()||this.previewMode())return;
+    this.record(deleteObjects(this.project(),this.selectedIds()));
+    this.selectOnly(null);
   }
   addPage():void {
     try {
       this.record(createPage(this.project()));
-      this.selectedId.set(null);
+      this.selectOnly(null);
     } catch(error) { this.status.set(String(error)); }
   }
   selectPage(id:string):void {
     if (!this.project().pages.some(p=>p.id===id)) return;
     this.record({...this.project(),activePageId:id});
-    this.selectedId.set(null);
+    this.selectOnly(null);
   }
   toggleGrid():void { this.gridVisible.update(v=>!v); }
   toggleSnap():void { this.snapEnabled.update(v=>!v); }
-  togglePreview():void { this.previewMode.update(v=>!v);this.selectedId.set(null); }
+  togglePreview():void { this.previewMode.update(v=>!v);this.selectOnly(null); }
   zoomBy(delta:number):void {
     this.zoom.update(value=>Math.min(2.5,Math.max(0.5,Math.round((value+delta)*10)/10)));
   }
   displayX(s:Shape):number {
+    const offset=this.dragOffsets()[s.id];
+    if(offset)return offset.x;
     const p=this.preview();
     return p?.id===s.id?p.x:s.x;
   }
   displayY(s:Shape):number {
+    const offset=this.dragOffsets()[s.id];
+    if(offset)return offset.y;
     const p=this.preview();
     return p?.id===s.id?p.y:s.y;
   }
@@ -191,7 +233,7 @@ export class EditorComponent {
     return p?.id===s.id?p.height:s.height;
   }
   onCanvasDown():void {
-    if (!this.previewMode()) this.selectedId.set(null);
+    if(!this.previewMode())this.selectOnly(null);
   }
   private pointerToCanvas(e:Pick<PointerEvent,'clientX'|'clientY'>):{x:number;y:number}|null {
     const svg=this.viewport?.nativeElement;
@@ -200,24 +242,29 @@ export class EditorComponent {
     const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(ctm.inverse());
     return {x:p.x,y:p.y};
   }
-  beginDrag(e:PointerEvent,s:Shape):void {
-    if (e.button!==0 || this.previewMode()) return;
+  beginDrag(e:PointerEvent,s:Shape):void{
+    if(e.button!==0||this.previewMode())return;
     e.stopPropagation();
-    this.selectedId.set(s.id);
+    if(e.shiftKey||e.ctrlKey||e.metaKey){
+      this.selectFromEvent(s.id,e);return;
+    }
+    if(!this.selectedIds().includes(s.id))this.selectOnly(s.id);
     const point=this.pointerToCanvas(e);
-    if (!point) return;
+    if(!point)return;
+    const ids=new Set(this.selectedIds());
+    const members=this.activePage().shapes.filter(shape=>ids.has(shape.id));
     this.drag={id:s.id,pointerId:e.pointerId,startX:point.x,startY:point.y,
-      original:s,mode:'move'};
+      original:s,members,mode:'move'};
     this.viewport?.nativeElement.setPointerCapture(e.pointerId);
   }
   beginResize(e:PointerEvent,s:Shape):void {
     if(e.button!==0 || this.previewMode() || s.kind==='text')return;
     e.stopPropagation();
-    this.selectedId.set(s.id);
+    this.selectOnly(s.id);
     const p=this.pointerToCanvas(e);
     if(!p)return;
     this.drag={id:s.id,pointerId:e.pointerId,startX:p.x,startY:p.y,
-      original:s,mode:'resize'};
+      original:s,members:[s],mode:'resize'};
     this.viewport?.nativeElement.setPointerCapture(e.pointerId);
   }
   movePointer(e:PointerEvent):void {
@@ -231,32 +278,40 @@ export class EditorComponent {
         width:Math.max(1,Math.min(10000,this.round(d.original.width+dx))),
         height:Math.max(1,Math.min(10000,this.round(d.original.height+dy)))});
     }else{
-      this.preview.set({id:d.id,
-        x:Math.min(10000,Math.max(-10000,this.round(d.original.x+dx))),
-        y:Math.min(10000,Math.max(-10000,this.round(d.original.y+dy))),
-        width:d.original.width,height:d.original.height});
+      const offsetX=this.round(d.original.x+dx)-d.original.x;
+      const offsetY=this.round(d.original.y+dy)-d.original.y;
+      const offsets:Record<string,{x:number;y:number}>={};
+      for(const member of d.members){
+        offsets[member.id]={
+          x:Math.max(-10000,Math.min(10000,member.x+offsetX)),
+          y:Math.max(-10000,Math.min(10000,member.y+offsetY))
+        };
+      }
+      this.dragOffsets.set(offsets);
     }
   }
   endPointer(e:PointerEvent):void {
     const d=this.drag;
     if (!d || d.pointerId!==e.pointerId) return;
-    const preview=this.preview();
-    this.drag=null;
-    this.preview.set(null);
+    const preview=this.preview(),moved=this.dragOffsets()[d.id];
+    this.drag=null;this.preview.set(null);this.dragOffsets.set({});
     const svg=this.viewport?.nativeElement;
-    if (svg?.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
-    if (preview && preview.id===d.id) {
-      const change:ShapeEdit=d.mode==='resize'
-        ?{width:preview.width,height:preview.height}
-        :{x:preview.x,y:preview.y};
-      try { this.record(editShape(this.project(),d.id,change)); }
-      catch(error) { this.status.set(String(error)); }
-    }
+    if(svg?.hasPointerCapture(e.pointerId))svg.releasePointerCapture(e.pointerId);
+    try{
+      if(d.mode==='resize'&&preview?.id===d.id){
+        this.record(editShape(this.project(),d.id,
+          {width:preview.width,height:preview.height}));
+      }else if(d.mode==='move'&&moved){
+        this.record(moveObjects(this.project(),d.members.map(s=>s.id),
+          moved.x-d.original.x,moved.y-d.original.y));
+      }
+    }catch(error){this.status.set(String(error));}
   }
   cancelPointer(e:PointerEvent):void {
     if(!this.drag || this.drag.pointerId!==e.pointerId)return;
     this.drag=null;
     this.preview.set(null);
+    this.dragOffsets.set({});
     const svg=this.viewport?.nativeElement;
     if(svg?.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
   }
@@ -289,7 +344,7 @@ export class EditorComponent {
       if (file.size>2_000_000) throw new Error('Project exceeds 2 MB import limit');
       const imported=parseProject(JSON.parse(await file.text()));
       this.record(imported);
-      this.selectedId.set(null);
+      this.selectOnly(null);
       this.status.set('Validated project imported');
     } catch(error) { this.status.set('Import rejected: '+String(error)); }
   }
@@ -298,7 +353,10 @@ export class EditorComponent {
     const node=e.target as HTMLElement|null;
     if (node?.closest('input,textarea,[contenteditable="true"]')) return;
     const modifier=e.ctrlKey||e.metaKey;
-    if(e.key==='Escape'){this.selectedId.set(null);return;}
+    if(e.key==='Escape'){this.selectOnly(null);return;}
+    if(modifier&&e.key.toLowerCase()==='a'&&!this.previewMode()){
+      e.preventDefault();this.selectAll();return;
+    }
     if(modifier && e.key.toLowerCase()==='d' && this.selectedId() && !this.previewMode()){
       e.preventDefault();this.duplicateSelected();return;
     }
@@ -309,7 +367,7 @@ export class EditorComponent {
       e.preventDefault();this.redo();return;
     }
     if (e.key==='Delete'||e.key==='Backspace') {
-      if (this.selectedId()) {e.preventDefault();this.removeSelected();}
+      if(this.selectionCount()){e.preventDefault();this.removeSelected();}
       return;
     }
     const step=e.shiftKey?10:1;
@@ -317,12 +375,11 @@ export class EditorComponent {
       ArrowLeft:[-step,0],ArrowRight:[step,0],
       ArrowUp:[0,-step],ArrowDown:[0,step]
     };
-    const move=arrows[e.key],s=this.selected();
-    if (move && s && !this.previewMode()) {
+    const move=arrows[e.key];
+    if(move&&this.selectionCount()&&!this.previewMode()){
       e.preventDefault();
-      try {this.record(editShape(this.project(),s.id,{
-        x:Math.round(s.x+move[0]!),y:Math.round(s.y+move[1]!)
-      }));} catch(error){this.status.set(String(error));}
+      try{this.record(moveObjects(this.project(),this.selectedIds(),move[0]!,move[1]!));}
+      catch(error){this.status.set(String(error));}
     }
   }
 }
