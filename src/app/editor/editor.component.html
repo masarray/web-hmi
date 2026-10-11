@@ -1,0 +1,416 @@
+<div class="shell">
+  <header class="topbar">
+    <div class="brand"><span class="logo">▤</span><span>Web HMI <b>Studio</b></span><span class="edition">ENGINEERING</span></div>
+    <div class="project-title">{{project().name}} <span class="slash">/</span> {{activePage().name}}</div>
+    <div class="top-actions">
+      <button type="button" (click)="undo()" [disabled]="!canUndo()" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button type="button" (click)="redo()" [disabled]="!canRedo()" title="Redo (Ctrl+Y)">↷ Redo</button>
+      <span class="separator"></span>
+      @if(selected() && !previewMode()){
+        <button type="button" (click)="duplicateSelected()" aria-label="Duplicate selected object" title="Duplicate selected object (Ctrl+D)">⧉ Duplicate</button>
+      }
+      <button type="button" (click)="exportProject()">⇩ Export</button>
+      <label class="file-label">⇧ Import <input type="file" accept="application/json,.json" (change)="importProject($event)" hidden></label>
+      <button type="button" class="primary" (click)="togglePreview()">{{previewMode()?'Exit Preview':'▶ Preview'}}</button>
+    </div>
+  </header>
+
+  <div class="workspace" [class.runtime]="previewMode()">
+    <aside class="sidebar">
+      <div class="pane-heading">PROJECT PAGES <button type="button" (click)="addPage()" aria-label="New page" title="New page">＋</button></div>
+      <div class="pages">
+        @for(page of project().pages;track page.id){
+          <button type="button" [class.active]="page.id===project().activePageId" (click)="selectPage(page.id)">
+            <span>▧</span>{{page.name}}<span class="page-count">{{page.shapes.length}}</span>
+          </button>
+        }
+      </div>
+      <div class="pane-heading with-line">ADD OBJECTS <span class="muted">click or drag</span></div>
+      <div class="palette">
+        @for(tool of palette;track tool.kind){
+          <button type="button" draggable="true" (dragstart)="startPaletteDrag($event,tool.kind)"
+            (click)="add(tool.kind)" [title]="'Click to add or drag '+tool.label+' onto canvas'">
+            <span class="symbol">{{tool.glyph}}</span><span>{{tool.label}}</span><span class="add-icon">＋</span>
+          </button>
+        }
+      </div>
+      <div class="pane-heading with-line">INDUSTRIAL SVG LIBRARY <span class="muted">{{symbolTotal}}</span></div>
+      <div class="symbol-filter">
+        <input type="search" aria-label="Search symbols" placeholder="Search pump, valve, motor..."
+          [value]="symbolSearch()" (input)="searchSymbol($event)">
+        <select aria-label="Symbol category" [value]="symbolCategory()" (change)="chooseSymbolCategory($event)">
+          @for(category of symbolCategories;track category){
+            <option [value]="category">{{category}}</option>
+          }
+        </select>
+      </div>
+      <div class="symbol-gallery" aria-label="SVG symbol library">
+        @for(symbol of symbolVisible();track symbol.id){
+          <button type="button" class="symbol-card" draggable="true"
+            [attr.aria-label]="'Add '+symbol.label+' SVG symbol'"
+            (dragstart)="startSymbolDrag($event,symbol.id)" (click)="addSymbol(symbol.id)"
+            [title]="'Click to add '+symbol.label+' or drag to canvas'">
+            <img [src]="symbol.href" [alt]="symbol.label" loading="lazy" width="35" height="35">
+            <span>{{symbol.label}}</span>
+          </button>
+        } @empty {
+          <p class="symbol-empty">No symbols match. Try another search or category.</p>
+        }
+      </div>
+      @if(symbolVisible().length < symbolMatches().length){
+        <button type="button" class="symbol-more" (click)="showMoreSymbols()">
+          Show more symbols ({{symbolMatches().length-symbolVisible().length}} remaining)
+        </button>
+      }
+      <div class="symbol-caption">
+        {{symbolVisible().length}} of {{symbolMatches().length}} matching SVGs
+        · {{processGraphicTotal}} editable vector composites · FUXA/MIT
+      </div>
+      <div class="sidebar-tip">Click or drag symbols onto your HMI. Hold <b>Shift</b> to select multiple objects. Preview animation with the ▶ button.</div>
+      <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
+      <div class="layers">
+        @for(shape of activePage().shapes;track shape.id){
+          <button type="button" [class.active]="selectionLookup().has(shape.id)"
+            [attr.aria-pressed]="selectionLookup().has(shape.id)"
+            (click)="selectFromEvent(shape.id,$event)">
+            <span class="layer-icon">◇</span><span class="ellipsize">{{shape.name}}</span>
+            @if(shape.tagId){<span class="tag-mark" title="Has tag metadata">T</span>}
+          </button>
+        }
+      </div>
+    </aside>
+
+    <main class="center">
+      <div class="canvas-toolbar">
+        <span class="mode-pill">◇ SVG EDITOR</span>
+        <span class="hint">Shift+click: multi-select · drag selection to move · Ctrl+A: select all</span>
+        <span class="grow"></span>
+        <button type="button" (click)="selectAll()" aria-label="Select all objects (Ctrl+A)" title="Select all objects (Ctrl+A)">Select all</button>
+        @if(selectionCount()>0){
+          <span class="selection-pill">{{selectionCount()}} selected</span>
+        }
+        <button type="button" [class.on]="gridVisible()" (click)="toggleGrid()">Grid</button>
+        <button type="button" [class.on]="snapEnabled()" (click)="toggleSnap()">Snap</button>
+        <span class="separator"></span>
+        <button type="button" (click)="zoomBy(-0.1)">−</button>
+        <span class="zoom">{{(zoom()*100).toFixed(0)}}%</span>
+        <button type="button" (click)="zoomBy(0.1)">＋</button>
+        <button type="button" (click)="zoom.set(1)" title="Reset zoom to 100%">100%</button>
+      </div>
+      @if(previewMode()){
+        <div class="simulation-bar" data-testid="simulation-bar">
+          <strong>{{previewSource()==='local'?'SIMULATION ONLY':'SERVER DEMO · READ ONLY'}}</strong>
+          <label>Data source
+            <select aria-label="Preview data source" [value]="previewSource()"
+              (change)="choosePreviewSource($event)">
+              <option value="local">Local simulator</option>
+              <option value="server">Node.js tag server</option>
+            </select>
+          </label>
+          @if(previewSource()==='server'){
+            <span class="stream-status" data-testid="stream-status"
+              [attr.data-state]="serverStatus()">{{serverStatus()}}</span>
+            <span class="stream-help">Demo: Plant/Motor, Plant/Gear, Pump/Pressure
+              · read-only · no industrial commands</span>
+          } @else if(boundTags().length){
+            <label>Tag
+              <select aria-label="Simulation tag" [value]="simulatedTag()" (change)="changeSimulatedTag($event)">
+                @for(tag of boundTags();track tag){<option [value]="tag">{{tag}}</option>}
+              </select>
+            </label>
+            <button type="button" (click)="simulateValue(1)">Set ON</button>
+            <button type="button" (click)="simulateValue(0)">Set OFF</button>
+            <label>Numeric value
+              <input type="number" aria-label="Simulated numeric value"
+                [value]="simulatedValue()" (change)="simulateNumber($event)">
+            </label>
+            <label>Quality
+              <select aria-label="Simulation quality" [value]="simulatedQuality()"
+                (change)="changeSimulatedQuality($event)">
+                <option value="GOOD">GOOD</option>
+                <option value="UNCERTAIN">UNCERTAIN</option>
+                <option value="BAD">BAD</option>
+                <option value="STALE">STALE</option>
+              </select>
+            </label>
+          } @else {
+            <span>No bound symbol tags. Configure one in the Studio inspector.</span>
+          }
+        </div>
+      }
+      <div class="drawing-area">
+        <div class="page-frame">
+          <svg #viewport class="viewport" [attr.viewBox]="'0 0 '+(1200/zoom())+' '+(700/zoom())"
+            preserveAspectRatio="xMidYMid meet"
+            (pointerdown)="onCanvasDown()" (pointermove)="movePointer($event)"
+            (pointerup)="endPointer($event)" (pointercancel)="cancelPointer($event)"
+            (dragover)="allowPaletteDrop($event)" (drop)="dropPaletteShape($event)">
+            <defs>
+              <pattern id="canvas-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#243645" stroke-width=".6"/>
+              </pattern>
+            </defs>
+            <rect width="1200" height="700" fill="#10202c"/>
+            @if(gridVisible() && !previewMode()){
+              <rect width="1200" height="700" fill="url(#canvas-grid)" pointer-events="none"/>
+            }
+            @for(shape of activePage().shapes;track shape.id){
+              <g class="canvas-node" [attr.data-shape-id]="shape.id"
+                [attr.data-visual-quality]="previewMode() && shape.kind==='symbol' && shape.tagId ? stateOf(shape)?.quality : null"
+                [attr.data-visual-status]="previewMode() && shape.kind==='symbol' && shape.tagId ? stateOf(shape)?.status : null"
+                [attr.transform]="'translate('+displayX(shape)+','+displayY(shape)+')'"
+                (pointerdown)="beginDrag($event,shape)">
+                @switch(shape.kind){
+                  @case('rect'){
+                    <rect x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                      [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="2"/>
+                  }
+                  @case('ellipse'){
+                    <ellipse [attr.cx]="displayWidth(shape)/2" [attr.cy]="displayHeight(shape)/2"
+                      [attr.rx]="displayWidth(shape)/2" [attr.ry]="displayHeight(shape)/2"
+                      [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="2"/>
+                  }
+                  @case('line'){
+                    <line x1="0" y1="0" [attr.x2]="displayWidth(shape)" [attr.y2]="displayHeight(shape)"
+                      [attr.stroke]="shape.stroke" stroke-width="4"/>
+                    <line x1="0" y1="0" [attr.x2]="displayWidth(shape)" [attr.y2]="displayHeight(shape)"
+                      stroke="transparent" stroke-width="18"/>
+                  }
+                  @case('text'){
+                    <text x="0" y="26" [attr.fill]="shape.fill" font-size="24"
+                      font-family="Segoe UI, Arial, sans-serif">{{shape.text}}</text>
+                  }
+                  @case('breaker'){
+                    <rect x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                      [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="3" rx="3"/>
+                    <path [attr.d]="'M 8 10 L '+(displayWidth(shape)-8)+' '+(displayHeight(shape)-10)"
+                      [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
+                  }
+                  @case('symbol'){
+                    @if(processGraphic(shape.symbolId);as graphic){
+                      <svg class="process-graphic" [class.process-pulse]="symbolAnimated(shape) && shape.animation==='pulse'"
+                        [class.process-entire-spin]="symbolAnimated(shape) && shape.animation==='spin' && !graphic.hasRotor"
+                        x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                        [attr.viewBox]="graphic.viewBox" preserveAspectRatio="xMidYMid meet"
+                        [attr.data-process-id]="graphic.id">
+                        <rect x="0" y="0" width="100%" height="100%" fill="transparent"
+                          pointer-events="all"/>
+                        @for(part of graphic.parts;track $index){
+                          @if(partAppearance(shape,$index);as appearance){
+                            <g [class.process-rotor]="appearance.spin"
+                              [attr.display]="appearance.visible?null:'none'"
+                              [attr.data-part-index]="$index">
+                              @if(part.kind==='path'){
+                                <path [attr.d]="part.d" fill="none"
+                                  [attr.stroke]="appearance.stroke"
+                                  stroke-width="1.7" vector-effect="non-scaling-stroke"
+                                  stroke-linecap="round" stroke-linejoin="round"/>
+                              } @else {
+                                <ellipse [attr.cx]="part.cx" [attr.cy]="part.cy"
+                                  [attr.rx]="part.rx" [attr.ry]="part.ry"
+                                  fill="none" [attr.stroke]="appearance.stroke"
+                                  stroke-width="1.7" vector-effect="non-scaling-stroke"/>
+                              }
+                            </g>
+                          }
+                        }
+                      </svg>
+                    } @else {
+                      <image class="svg-library-symbol" [class.symbol-spin]="symbolAnimated(shape) && shape.animation==='spin'"
+                        [class.symbol-pulse]="symbolAnimated(shape) && shape.animation==='pulse'"
+                        x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                        preserveAspectRatio="xMidYMid meet" [attr.href]="symbolUrl(shape)"/>
+                    }
+                  }
+                }
+                @if(previewMode() && shape.kind==='symbol' && shape.tagId){
+                  @if(stateOf(shape);as visual){
+                    <g class="visual-quality-indicator" pointer-events="none">
+                      <circle [attr.cx]="displayWidth(shape)-5" cy="5" r="6"
+                        [attr.fill]="visual.stroke" stroke="#111e29" stroke-width="2"/>
+                      @if(visual.warning){
+                        <rect x="-4" y="-4" [attr.width]="displayWidth(shape)+8"
+                          [attr.height]="displayHeight(shape)+8"
+                          fill="none" [attr.stroke]="visual.stroke"
+                          stroke-width="2.5" stroke-dasharray="6 4"/>
+                        <rect x="0" [attr.y]="displayHeight(shape)+6" width="75"
+                          height="19" rx="3" fill="#192530" [attr.stroke]="visual.stroke"/>
+                        <text x="5" [attr.y]="displayHeight(shape)+20"
+                          [attr.fill]="visual.stroke" font-size="12"
+                          font-weight="600">{{visual.status}}</text>
+                      }
+                    </g>
+                  }
+                }
+                @if(selectionLookup().has(shape.id) && !previewMode()){
+                  <rect x="-6" y="-6" [attr.width]="displayWidth(shape)+12" [attr.height]="displayHeight(shape)+12"
+                    fill="none" stroke="#ffca74" stroke-width="1.8" stroke-dasharray="5 4"
+                    pointer-events="none"/>
+                  @if(shape.kind!=='text' && selectionCount()===1){
+                    <circle class="resize-handle" [attr.cx]="displayWidth(shape)" [attr.cy]="displayHeight(shape)"
+                      r="9" fill="#ffce7a" stroke="#24343d" stroke-width="2"
+                      (pointerdown)="beginResize($event,shape)">
+                      <title>Drag to resize {{shape.name}}</title>
+                    </circle>
+                  }
+                }
+              </g>
+            }
+          </svg>
+        </div>
+      </div>
+      <div class="canvas-footer"><span>1200 × 700 • SVG Workspace</span>
+        <span>{{previewMode()?(previewSource()==='server'?'SERVER DEMO — READ ONLY — NO INDUSTRIAL DEVICES':'SIMULATED VALUES — NOT CONNECTED TO INDUSTRIAL EQUIPMENT'):'Design placeholders — no live equipment data'}}</span>
+      </div>
+    </main>
+
+    <aside class="inspector">
+      <div class="pane-heading">PROPERTIES</div>
+      @if(selectionCount()>1){
+        <div class="inspector-section selection-heading">
+          <h3>MULTI-SELECTION</h3>
+          <p>{{selectionCount()}} objects selected. Shift+click to add/remove, or drag selected objects together.</p>
+          <button type="button" (click)="selectOnly(null)">Clear selection</button>
+        </div>
+        <div class="inspector-section">
+          <h3>ALIGN OBJECTS</h3>
+          <div class="align-grid">
+            <button type="button" (click)="alignSelection('left')" title="Align left edges">Left</button>
+            <button type="button" (click)="alignSelection('center')" title="Align horizontal centers">Center</button>
+            <button type="button" (click)="alignSelection('right')" title="Align right edges">Right</button>
+            <button type="button" (click)="alignSelection('top')" title="Align top edges">Top</button>
+            <button type="button" (click)="alignSelection('middle')" title="Align vertical centers">Middle</button>
+            <button type="button" (click)="alignSelection('bottom')" title="Align bottom edges">Bottom</button>
+          </div>
+        </div>
+        @if(selectionCount()>=3){
+          <div class="inspector-section">
+            <h3>DISTRIBUTE EVENLY</h3>
+            <p class="helper">Spread object centers evenly while keeping the outermost positions.</p>
+            <div class="align-grid two">
+              <button type="button" (click)="distributeSelection('horizontal')">Horizontal</button>
+              <button type="button" (click)="distributeSelection('vertical')">Vertical</button>
+            </div>
+          </div>
+        }
+        <div class="inspector-section">
+          <button type="button" class="danger" (click)="removeSelected()">Delete {{selectionCount()}} selected objects</button>
+          <p class="helper">Undo restores all changes in one step.</p>
+        </div>
+      } @else if(selected();as shape){
+        <div class="inspector-section">
+          <label>Object name<input type="text" [value]="shape.name" maxlength="100" (change)="updateProperty('name',$event)"></label>
+          <div class="helper">{{shape.kind}} · {{shape.id}}</div>
+        </div>
+        <div class="inspector-section">
+          <h3>TRANSFORM</h3>
+          <div class="field-grid">
+            <label>X<input type="number" [value]="shape.x" (change)="updateProperty('x',$event)"></label>
+            <label>Y<input type="number" [value]="shape.y" (change)="updateProperty('y',$event)"></label>
+            <label>Width<input type="number" min="1" [value]="shape.width" (change)="updateProperty('width',$event)"></label>
+            <label>Height<input type="number" min="1" [value]="shape.height" (change)="updateProperty('height',$event)"></label>
+          </div>
+        </div>
+        <div class="inspector-section">
+          <h3>APPEARANCE</h3>
+          <div class="field-grid">
+            @if(shape.kind!=='symbol' || !processGraphic(shape.symbolId)){
+              <label>Fill<input type="color" [value]="shape.fill" (change)="updateProperty('fill',$event)"></label>
+            }
+            <label>Stroke<input type="color" [value]="shape.stroke" (change)="updateProperty('stroke',$event)"></label>
+          </div>
+          @if(shape.kind==='text'){
+            <label>Text<input type="text" [value]="shape.text" maxlength="160" (change)="updateProperty('text',$event)"></label>
+          }
+          @if(shape.kind==='symbol'){
+            <p class="helper">
+              @if(processGraphic(shape.symbolId);as definition){
+                Editable vector geometry: {{definition.parts.length}} SVG parts.
+                @if(definition.hasRotor){ Rotor-only rotation available. }
+              } @else {
+                FUXA SVG asset, original aspect ratio preserved.
+              }
+            </p>
+            <label>Preview animation
+              <select aria-label="Symbol animation" [value]="shape.animation??'none'"
+                (change)="updateProperty('animation',$event)">
+                <option value="none">None (static)</option>
+                <option value="spin">Rotate smoothly</option>
+                <option value="pulse">Pulse softly</option>
+              </select>
+            </label>
+            <p class="helper">Animation runs in Preview only. With a bound tag, it
+              runs only when the simulated sample is GOOD and active.</p>
+            @if(processGraphic(shape.symbolId);as graphic){
+              <div class="part-rules">
+                <h3>COMPONENT BEHAVIOR</h3>
+                <p class="helper">Optional rules for individual SVG parts.
+                  Default preserves the original rotor and housing behavior.</p>
+                @for(part of graphic.parts;track $index){
+                  <label>Part {{$index+1}} · {{part.rotor?'Rotor':'Static outline'}}
+                    <select [attr.aria-label]="'Part '+($index+1)+' behavior'"
+                      [value]="partEffect(shape,$index)"
+                      (change)="updatePartEffect(shape,$index,$event)">
+                      <option value="default">Default</option>
+                      <option value="fixed">Fixed color, no animation</option>
+                      <option value="state-color">Follow tag state color</option>
+                      <option value="hide-idle">Hide unless GOOD + active</option>
+                      <option value="spin-active">Spin when active (Rotate)</option>
+                    </select>
+                  </label>
+                }
+              </div>
+            }
+          }
+        </div>
+        <div class="inspector-section">
+          <h3>TAG BINDING (SIMULATOR PREVIEW)</h3>
+          <label>Tag identifier<input type="text" placeholder="Device/Tag" maxlength="160" [value]="shape.tagId" (change)="updateProperty('tagId',$event)"></label>
+          @if(shape.kind==='symbol' && shape.tagId){
+            <label>Visual activation rule
+              <select aria-label="Visual activation rule" [value]="shape.visualRule??'when-true'"
+                (change)="updateProperty('visualRule',$event)">
+                <option value="when-true">ON when true / non-zero</option>
+                <option value="at-least">ON when value ≥ threshold</option>
+              </select>
+            </label>
+            @if(shape.visualRule==='at-least'){
+              <label>Threshold
+                <input aria-label="Visual threshold" type="number"
+                  [value]="shape.threshold??1" (change)="updateProperty('threshold',$event)">
+              </label>
+            }
+          }
+          <p class="helper">Tag binding is configuration only. Preview uses local simulated values;
+            BAD, UNCERTAIN, STALE, or missing values stop animation.</p>
+        </div>
+        <div class="inspector-section">
+          <div class="quick-actions">
+            <button type="button" (click)="duplicateSelected()">⧉ Duplicate</button>
+            <button type="button" (click)="layerOrder('front')">Bring to front</button>
+            <button type="button" (click)="layerOrder('back')">Send to back</button>
+          </div>
+          <p class="helper">Tip: Ctrl+D duplicates, Delete removes. Drag the gold corner to resize.</p>
+          <button type="button" class="danger" (click)="removeSelected()">Delete selected object</button>
+        </div>
+      } @else {
+        <div class="inspector-section">
+          <h3>PROJECT SETTINGS</h3>
+          <label>Project name<input aria-label="Project name" type="text" maxlength="120" [value]="project().name" (change)="updateProjectName($event)"></label>
+          <label>Page name<input aria-label="Page name" type="text" maxlength="120" [value]="activePage().name" (change)="updatePageName($event)"></label>
+          @if(project().pages.length>1){
+            <button type="button" class="danger" (click)="removePage()">Delete this page</button>
+          }
+        </div>
+        <div class="empty-inspector">
+          <span>◇</span><p><strong>Get started in 3 steps</strong></p>
+          <p>1. Click an object on the left, or drag it onto your drawing.</p>
+          <p>2. Move and resize on the canvas. Edit its properties here.</p>
+          <p>3. Changes save locally. Export JSON for a portable backup.</p>
+        </div>
+      }
+    </aside>
+  </div>
+  <footer class="statusbar"><span class="status-dot"></span>{{status()}}
+    <span class="grow"></span><span>Local editor · No industrial connection</span><span class="version">v0.1.0</span></footer>
+</div>

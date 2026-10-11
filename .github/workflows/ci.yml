@@ -1,0 +1,57 @@
+name: Editor CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: editor-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  editor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Cache npm tarballs
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Document model tests
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Typecheck tag server
+        run: npm run typecheck:server
+      - name: Production build
+        run: npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium --only-shell
+      - name: E2E browser smoke
+        run: npm run test:e2e
+      - name: Upload editor build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-hmi-editor
+          path: dist/web-hmi/browser/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Browser screenshot and failure traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-browser-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
