@@ -101,6 +101,14 @@
         · {{processGraphicTotal}} editable vector composites · FUXA/MIT
       </div>
       <div class="symbol-my-heading">
+        <span>DYNAMIC ELECTRICAL SYMBOLS</span>
+      </div>
+      <button type="button" class="custom-symbol-item" draggable="true"
+        aria-label="Add dynamic CB Rotating"
+        (dragstart)="startCustomSymbolDrag($event,'cb-rotating')" (click)="addCustomSymbol('cb-rotating')">
+        <span aria-hidden="true">⟋</span><span>CB Rotating · SP / DP</span><span>＋</span>
+      </button>
+      <div class="symbol-my-heading">
         <span>MY DYNAMIC SYMBOLS · {{(project().customSymbols??[]).length}}</span>
         <label class="symbol-import">⇧ Import JSON
           <input type="file" hidden accept=".json,application/json" (change)="importDynamicSymbol($event)">
