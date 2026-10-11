@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, HostListener,
 import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
   newShape, newSymbol, insertShape, editShape, deleteShape, createPage } from './document';
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
+import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
 import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } from './actions';
 import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align, type Axis } from './selection-ops';
 
@@ -40,6 +41,8 @@ export class EditorComponent {
   readonly symbolCategory=signal<SymbolCategory>('All');
   readonly symbolCategories=SYMBOL_CATEGORIES;
   readonly symbolTotal=HMI_SYMBOLS.length;
+  readonly processGraphic=findProcessGraphic;
+  readonly processGraphicTotal=PROCESS_GRAPHIC_COUNT;
   readonly symbolMatches=computed(()=>filterSymbols(this.symbolSearch(),this.symbolCategory()));
   readonly symbolVisible=computed(()=>this.symbolMatches().slice(0,24));
   readonly palette:{kind:ShapeKind;label:string;glyph:string}[]=[

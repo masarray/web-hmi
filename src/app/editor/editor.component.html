@@ -59,7 +59,7 @@
       </div>
       <div class="symbol-caption">
         {{symbolVisible().length}} of {{symbolMatches().length}} matching SVGs
-        · FUXA/MIT · vector quality
+        · {{processGraphicTotal}} editable vector composites · FUXA/MIT
       </div>
       <div class="sidebar-tip">Click or drag symbols onto your HMI. Hold <b>Shift</b> to select multiple objects. Preview animation with the ▶ button.</div>
       <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
@@ -139,10 +139,35 @@
                       [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
                   }
                   @case('symbol'){
-                    <image class="svg-library-symbol" [class.symbol-spin]="previewMode() && shape.animation==='spin'"
-                      [class.symbol-pulse]="previewMode() && shape.animation==='pulse'"
-                      x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
-                      preserveAspectRatio="xMidYMid meet" [attr.href]="symbolUrl(shape)"/>
+                    @if(processGraphic(shape.symbolId);as graphic){
+                      <svg class="process-graphic" [class.process-pulse]="previewMode() && shape.animation==='pulse'"
+                        [class.process-entire-spin]="previewMode() && shape.animation==='spin' && !graphic.hasRotor"
+                        x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                        [attr.viewBox]="graphic.viewBox" preserveAspectRatio="xMidYMid meet"
+                        [attr.data-process-id]="graphic.id">
+                        <rect x="0" y="0" width="100%" height="100%" fill="transparent"
+                          pointer-events="all"/>
+                        @for(part of graphic.parts;track $index){
+                          <g [class.process-rotor]="previewMode() && shape.animation==='spin' && part.rotor===true">
+                            @if(part.kind==='path'){
+                              <path [attr.d]="part.d" fill="none" [attr.stroke]="shape.stroke"
+                                stroke-width="1.7" vector-effect="non-scaling-stroke"
+                                stroke-linecap="round" stroke-linejoin="round"/>
+                            } @else {
+                              <ellipse [attr.cx]="part.cx" [attr.cy]="part.cy"
+                                [attr.rx]="part.rx" [attr.ry]="part.ry"
+                                fill="none" [attr.stroke]="shape.stroke"
+                                stroke-width="1.7" vector-effect="non-scaling-stroke"/>
+                            }
+                          </g>
+                        }
+                      </svg>
+                    } @else {
+                      <image class="svg-library-symbol" [class.symbol-spin]="previewMode() && shape.animation==='spin'"
+                        [class.symbol-pulse]="previewMode() && shape.animation==='pulse'"
+                        x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                        preserveAspectRatio="xMidYMid meet" [attr.href]="symbolUrl(shape)"/>
+                    }
                   }
                 }
                 @if(selectionLookup().has(shape.id) && !previewMode()){
@@ -222,7 +247,14 @@
             <label>Text<input type="text" [value]="shape.text" maxlength="160" (change)="updateProperty('text',$event)"></label>
           }
           @if(shape.kind==='symbol'){
-            <p class="helper">Vector source: FUXA SVG library (MIT). Original aspect ratio preserved.</p>
+            <p class="helper">
+              @if(processGraphic(shape.symbolId);as definition){
+                Editable vector geometry: {{definition.parts.length}} SVG parts.
+                @if(definition.hasRotor){ Rotor-only rotation available. }
+              } @else {
+                FUXA SVG asset, original aspect ratio preserved.
+              }
+            </p>
             <label>Preview animation
               <select aria-label="Symbol animation" [value]="shape.animation??'none'"
                 (change)="updateProperty('animation',$event)">

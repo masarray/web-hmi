@@ -109,3 +109,19 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 @media(prefers-reduced-motion:reduce){
   .svg-library-symbol.symbol-spin,.svg-library-symbol.symbol-pulse{animation:none}
 }
+
+/* Inline SVG process definitions allow stroke changes without editing external SVG files.
+ * Only rotor-marked children rotate; the housing and equipment outline remain fixed. */
+.process-graphic{overflow:visible;pointer-events:visiblePainted}
+.process-graphic.process-pulse{transform-box:fill-box;transform-origin:center;
+  animation:hmi-part-pulse 1.8s ease-in-out infinite}
+.process-graphic.process-entire-spin{transform-box:fill-box;transform-origin:center;
+  animation:hmi-part-rotate 2.2s linear infinite}
+.process-graphic .process-rotor{transform-box:fill-box;transform-origin:center;
+  animation:hmi-part-rotate 2.2s linear infinite}
+@keyframes hmi-part-rotate{to{transform:rotate(360deg)}}
+@keyframes hmi-part-pulse{50%{opacity:.55}}
+@media(prefers-reduced-motion:reduce){
+  .process-graphic.process-pulse,.process-graphic.process-entire-spin,
+  .process-graphic .process-rotor{animation:none}
+}
