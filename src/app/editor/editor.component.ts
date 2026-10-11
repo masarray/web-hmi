@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener,
-  ViewChild, computed, signal, OnDestroy } from '@angular/core';
+  ViewChild, computed, signal, effect, OnDestroy } from '@angular/core';
 import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
   newShape, newSymbol, insertShape, editShape, deleteShape, createPage } from './document';
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
+import {TagStreamClient,type StreamStatus} from './tag-stream-client';
 import {evaluatePage,evaluatePartAppearance,updateTagSample,
   nextFreshnessDeadline,STALE_AFTER_MS,type TagQuality,type TagTable,
   type VisualState,type PartEffect,type PartAppearance} from './visual-runtime';
@@ -30,6 +31,9 @@ export class EditorComponent implements OnDestroy {
   readonly snapEnabled=signal(true);
   readonly gridVisible=signal(true);
   readonly previewMode=signal(false);
+  readonly previewSource=signal<'local'|'server'>('local');
+  readonly serverStatus=signal<StreamStatus>('disconnected');
+  readonly serverSamples=signal<TagTable>(new Map());
   /** Transient test-feed, never saved to project or undo history. */
   readonly simulatedSamples=signal<TagTable>(new Map());
   readonly freshnessClock=signal(Date.now());
@@ -43,8 +47,10 @@ export class EditorComponent implements OnDestroy {
     const chosen=this.simulatedTagChoice();
     return this.boundTags().includes(chosen)?chosen:(this.boundTags()[0]??'');
   });
+  readonly activeSamples=computed(()=>this.previewSource()==='server'
+    ?this.serverSamples():this.simulatedSamples());
   readonly visualStates=computed(()=>evaluatePage(
-    this.activePage().shapes,this.simulatedSamples(),this.previewMode(),
+    this.activePage().shapes,this.activeSamples(),this.previewMode(),
     this.freshnessClock()));
   /** Recomputed only when a shape or tag state actually changes. */
   readonly partAppearances=computed(()=>{
@@ -90,7 +96,30 @@ export class EditorComponent implements OnDestroy {
   private past:Project[]=[];
   private future:Project[]=[];
   private drag:Drag|null=null;
-  ngOnDestroy():void{this.cancelFreshnessTimer();}
+  private readonly tagStream=new TagStreamClient({
+    onStatus:status=>this.serverStatus.set(status),
+    onReset:()=>{
+      this.serverSamples.set(new Map());
+      this.freshnessClock.set(Date.now());
+      this.rescheduleFreshness();
+    },
+    onSample:(sample,time)=>{
+      const previous=this.serverSamples();
+      this.serverSamples.set(updateTagSample(previous,{...sample,receivedAtMs:time}));
+      this.freshnessClock.set(time);
+      this.rescheduleFreshness();
+    }
+  });
+  private readonly streamSync=effect(()=>{
+    const active=this.previewMode()&&this.previewSource()==='server';
+    const tags=this.boundTags();
+    if(active){this.tagStream.setTags(tags);this.tagStream.start();}
+    else this.tagStream.stop();
+  });
+  ngOnDestroy():void{
+    this.tagStream.stop();
+    this.cancelFreshnessTimer();
+  }
   private cancelFreshnessTimer():void{
     if(this.freshnessTimer!==null)clearTimeout(this.freshnessTimer);
     this.freshnessTimer=null;
@@ -99,7 +128,7 @@ export class EditorComponent implements OnDestroy {
     this.cancelFreshnessTimer();
     if(!this.previewMode())return;
     const now=Date.now();
-    const deadline=nextFreshnessDeadline(this.simulatedSamples(),now);
+    const deadline=nextFreshnessDeadline(this.activeSamples(),now);
     if(deadline===null)return;
     this.freshnessTimer=setTimeout(()=>{
       this.freshnessTimer=null;
@@ -303,6 +332,7 @@ export class EditorComponent implements OnDestroy {
     this.publishSimulation(value);
   }
   private publishSimulation(value:number):void{
+    if(this.previewSource()!=='local')return;
     const tagId=this.simulatedTag();
     if(!tagId)return;
     const previous=this.simulatedSamples();
@@ -362,6 +392,14 @@ export class EditorComponent implements OnDestroy {
   }
   toggleGrid():void { this.gridVisible.update(v=>!v); }
   toggleSnap():void { this.snapEnabled.update(v=>!v); }
+  choosePreviewSource(event:Event):void{
+    const value=(event.target as HTMLSelectElement).value;
+    if(value==='local'||value==='server'){
+      this.previewSource.set(value);
+      this.freshnessClock.set(Date.now());
+      this.rescheduleFreshness();
+    }
+  }
   togglePreview():void {
     this.previewMode.update(v=>!v);
     this.selectOnly(null);

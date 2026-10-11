@@ -99,8 +99,20 @@
       </div>
       @if(previewMode()){
         <div class="simulation-bar" data-testid="simulation-bar">
-          <strong>SIMULATION ONLY</strong>
-          @if(boundTags().length){
+          <strong>{{previewSource()==='local'?'SIMULATION ONLY':'SERVER DEMO · READ ONLY'}}</strong>
+          <label>Data source
+            <select aria-label="Preview data source" [value]="previewSource()"
+              (change)="choosePreviewSource($event)">
+              <option value="local">Local simulator</option>
+              <option value="server">Node.js tag server</option>
+            </select>
+          </label>
+          @if(previewSource()==='server'){
+            <span class="stream-status" data-testid="stream-status"
+              [attr.data-state]="serverStatus()">{{serverStatus()}}</span>
+            <span class="stream-help">Demo: Plant/Motor, Plant/Gear, Pump/Pressure
+              · read-only · no industrial commands</span>
+          } @else if(boundTags().length){
             <label>Tag
               <select aria-label="Simulation tag" [value]="simulatedTag()" (change)="changeSimulatedTag($event)">
                 @for(tag of boundTags();track tag){<option [value]="tag">{{tag}}</option>}
@@ -122,7 +134,7 @@
               </select>
             </label>
           } @else {
-            <span>No symbols with tag binding on this page. Configure a tag in Studio.</span>
+            <span>No bound symbol tags. Configure one in the Studio inspector.</span>
           }
         </div>
       }
@@ -248,7 +260,7 @@
         </div>
       </div>
       <div class="canvas-footer"><span>1200 × 700 • SVG Workspace</span>
-        <span>{{previewMode()?'SIMULATED VALUES — NOT CONNECTED TO INDUSTRIAL EQUIPMENT':'Design placeholders — no live equipment data'}}</span>
+        <span>{{previewMode()?(previewSource()==='server'?'SERVER DEMO — READ ONLY — NO INDUSTRIAL DEVICES':'SIMULATED VALUES — NOT CONNECTED TO INDUSTRIAL EQUIPMENT'):'Design placeholders — no live equipment data'}}</span>
       </div>
     </main>
 

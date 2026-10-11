@@ -8,7 +8,9 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "check": "npm test && npm run typecheck && npm run build && npm run test:e2e"
+    "check": "npm test && npm run typecheck && npm run build && npm run test:e2e",
+    "start:server": "node --experimental-strip-types server/main.ts",
+    "typecheck:server": "tsc -p tsconfig.server.json"
   },
   "engines": {
     "node": ">=22.22.3"

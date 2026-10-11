@@ -31,6 +31,8 @@ jobs:
         run: npm test
       - name: Typecheck
         run: npm run typecheck
+      - name: Typecheck tag server
+        run: npm run typecheck:server
       - name: Production build
         run: npm run build
       - name: Install Chromium

@@ -146,3 +146,7 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 /* CP-06B: grouped by component to avoid modal dialogs for novice users. */
 .part-rules{margin-top:12px;border-top:1px solid #344b59;padding-top:12px}
 .part-rules h3{margin-bottom:7px}.part-rules label{margin-top:9px}
+
+.stream-status{font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px;border:1px solid #a47f52;border-radius:3px;color:#f1dcb7}
+.stream-status[data-state=connected]{border-color:#68bca2;color:#94e3c5}
+.stream-help{font-size:10px;color:#b5a68c}
