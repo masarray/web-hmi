@@ -11,7 +11,7 @@ export interface TagHub {
 }
 /** One source and one acquisition stream fan out across all browser subscribers. */
 export function createTagHub(opts:{
- allowedOrigins?:readonly string[];heartbeatMs?:number;sourceIntervalMs?:number;demo?:boolean;staleMs?:number;
+ allowedOrigins?:readonly string[];heartbeatMs?:number;sourceIntervalMs?:number;demo?:boolean;staleMs?:number;source?:'DEMO'|'MODBUS_LAB';
 }={}):TagHub {
  const heartbeatMs=opts.heartbeatMs??1000;
  if(!Number.isInteger(heartbeatMs)||heartbeatMs<100)throw Error('Bad heartbeat');
@@ -31,7 +31,7 @@ export function createTagHub(opts:{
   if(req.method==='GET'&&req.url==='/health'){
    res.writeHead(200,{'Content-Type':'application/json; charset=utf-8',
     'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
-   res.end(JSON.stringify({status:'ok',source:'DEMO',protocol:1,readOnly:true}));
+   res.end(JSON.stringify({status:'ok',source:opts.source??'DEMO',protocol:1,readOnly:true}));
   }else{res.writeHead(404,{'Content-Type':'text/plain'});res.end('Not found');}
  });
  const wss=new WebSocketServer({noServer:true,maxPayload:32768,perMessageDeflate:false});
@@ -67,7 +67,7 @@ export function createTagHub(opts:{
  wss.on('connection',ws=>{
   clients.set(ws,new Set());pong.set(ws,Date.now());
   ws.on('pong',()=>pong.set(ws,Date.now()));
-  emit(ws,{type:'hello',version:1,source:'DEMO',heartbeatMs});
+  emit(ws,{type:'hello',version:1,source:opts.source??'DEMO',heartbeatMs});
   ws.on('message',buf=>{
    let tags:string[];
    try{tags=parseSubscription(JSON.parse(buf.toString())).tags;}
