@@ -86,6 +86,14 @@ export class TagStreamClient {
     this.subscribe();return;
    }
    if(!this.handshaken)return;
+   if(message.type==='source-reset'){
+    if(message.source!=='DEMO'&&message.source!=='MODBUS_LAB'&&
+      message.source!=='MODBUS_TCP')return;
+    this.hooks.onReset();
+    this.hooks.onSource?.(message.source);
+    this.lastServerMessage=Date.now();
+    return;
+   }
    if(message.type==='heartbeat'){
     this.lastServerMessage=Date.now();return;
    }

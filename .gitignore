@@ -7,3 +7,7 @@ coverage/
 .env
 playwright-report/
 test-results/
+
+# Server-owned active device config (contains site-specific endpoints)
+config/modbus-active.json
+config/modbus-active.json.tmp-*

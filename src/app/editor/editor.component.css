@@ -200,3 +200,15 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
  .mapping-device{grid-template-columns:repeat(3,minmax(120px,1fr))}
  .mapping-summary{flex-direction:column;align-items:flex-start}
 }
+
+/* CP-11 authenticated runtime device apply: token never persisted. */
+.mapping-control{display:flex;align-items:end;gap:9px;flex-wrap:wrap;
+ padding:0 18px 12px;color:#a9c7d5;font-size:11px}
+.mapping-control label{flex:1;min-width:205px;max-width:340px;color:#abc5d3}
+.mapping-control input{display:block;width:100%;margin-top:5px;background:#0b1923;
+ border:1px solid #3c596b;color:#e8f2fa;border-radius:4px;padding:8px;font-size:11px}
+.mapping-control button{background:#24465a;border:1px solid #46748e;color:#d6effa;
+ border-radius:4px;padding:8px 11px;font-size:11px}
+.mapping-control button.mapping-apply{background:#27674f;border-color:#4fa681;color:#effff6}
+.mapping-control button:disabled{opacity:.4}
+.mapping-control span{font-size:10px;color:#96b6c2;padding:7px 0}
