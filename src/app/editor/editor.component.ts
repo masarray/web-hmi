@@ -33,6 +33,7 @@ export class EditorComponent implements OnDestroy {
   readonly previewMode=signal(false);
   readonly previewSource=signal<'local'|'server'>('local');
   readonly serverStatus=signal<StreamStatus>('disconnected');
+  readonly serverKind=signal<'DEMO'|'MODBUS_LAB'>('DEMO');
   readonly serverSamples=signal<TagTable>(new Map());
   /** Transient test-feed, never saved to project or undo history. */
   readonly simulatedSamples=signal<TagTable>(new Map());
@@ -98,6 +99,7 @@ export class EditorComponent implements OnDestroy {
   private drag:Drag|null=null;
   private readonly tagStream=new TagStreamClient({
     onStatus:status=>this.serverStatus.set(status),
+    onSource:source=>this.serverKind.set(source),
     onReset:()=>{
       this.serverSamples.set(new Map());
       this.freshnessClock.set(Date.now());
