@@ -615,14 +615,20 @@
         </div>
         <div class="inspector-section">
           <h3>APPEARANCE</h3>
-          <div class="field-grid">
-            @if(shape.kind!=='symbol' || !processGraphic(shape.symbolId)){
-              <label>Fill<input type="color" [value]="shape.fill" (change)="updateProperty('fill',$event)"></label>
-            }
-            <label>Stroke<input type="color" [value]="shape.stroke" (change)="updateProperty('stroke',$event)"></label>
-          </div>
+          @if(!dynamicSymbol(shape)){
+            <div class="field-grid">
+              @if(shape.kind!=='symbol' || !processGraphic(shape.symbolId)){
+                <label>Fill<input type="color" [value]="shape.fill" (change)="updateProperty('fill',$event)"></label>
+              }
+              <label>Stroke<input type="color" [value]="shape.stroke" (change)="updateProperty('stroke',$event)"></label>
+            </div>
+          }
           @if(shape.kind==='text'){
             <label>Text<input type="text" [value]="shape.text" maxlength="160" (change)="updateProperty('text',$event)"></label>
+          }
+          @if(shape.kind==='line'){
+            <button type="button" class="symbol-builder-action"
+              (click)="openSymbolBuilder()">Create Dynamic Symbol from Line</button>
           }
           @if(shape.kind==='symbol' && dynamicSymbol(shape);as dynamicDefinition){
             <div class="dynamic-symbol-details">
