@@ -1,0 +1,155 @@
+<div class="shell">
+  <header class="topbar">
+    <div class="brand"><span class="logo">▤</span><span>Web HMI <b>Studio</b></span><span class="edition">ENGINEERING</span></div>
+    <div class="project-title">{{project().name}} <span class="slash">/</span> {{activePage().name}}</div>
+    <div class="top-actions">
+      <button type="button" (click)="undo()" [disabled]="!canUndo()" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button type="button" (click)="redo()" [disabled]="!canRedo()" title="Redo (Ctrl+Y)">↷ Redo</button>
+      <span class="separator"></span>
+      <button type="button" (click)="exportProject()">⇩ Export</button>
+      <label class="file-label">⇧ Import <input type="file" accept="application/json,.json" (change)="importProject($event)" hidden></label>
+      <button type="button" class="primary" (click)="togglePreview()">{{previewMode()?'Exit Preview':'▶ Preview'}}</button>
+    </div>
+  </header>
+
+  <div class="workspace" [class.runtime]="previewMode()">
+    <aside class="sidebar">
+      <div class="pane-heading">PROJECT PAGES <button type="button" (click)="addPage()" title="New page">＋</button></div>
+      <div class="pages">
+        @for(page of project().pages;track page.id){
+          <button type="button" [class.active]="page.id===project().activePageId" (click)="selectPage(page.id)">
+            <span>▧</span>{{page.name}}<span class="page-count">{{page.shapes.length}}</span>
+          </button>
+        }
+      </div>
+      <div class="pane-heading with-line">SHAPE LIBRARY</div>
+      <div class="palette">
+        @for(tool of palette;track tool.kind){
+          <button type="button" (click)="add(tool.kind)" [title]="'Add '+tool.label">
+            <span class="symbol">{{tool.glyph}}</span><span>{{tool.label}}</span><span class="add-icon">＋</span>
+          </button>
+        }
+      </div>
+      <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
+      <div class="layers">
+        @for(shape of activePage().shapes;track shape.id){
+          <button type="button" [class.active]="shape.id===selectedId()" (click)="selectedId.set(shape.id)">
+            <span class="layer-icon">◇</span><span class="ellipsize">{{shape.name}}</span>
+            @if(shape.tagId){<span class="tag-mark" title="Has tag metadata">T</span>}
+          </button>
+        }
+      </div>
+    </aside>
+
+    <main class="center">
+      <div class="canvas-toolbar">
+        <span class="mode-pill">◇ SVG EDITOR</span>
+        <span class="hint">Select and drag objects · Inspector edits on right</span>
+        <span class="grow"></span>
+        <button type="button" [class.on]="gridVisible()" (click)="toggleGrid()">Grid</button>
+        <button type="button" [class.on]="snapEnabled()" (click)="toggleSnap()">Snap</button>
+        <span class="separator"></span>
+        <button type="button" (click)="zoomBy(-0.1)">−</button>
+        <span class="zoom">{{(zoom()*100).toFixed(0)}}%</span>
+        <button type="button" (click)="zoomBy(0.1)">＋</button>
+      </div>
+      <div class="drawing-area">
+        <div class="page-frame">
+          <svg #viewport class="viewport" [attr.viewBox]="'0 0 '+(1200/zoom())+' '+(700/zoom())"
+            preserveAspectRatio="xMidYMid meet"
+            (pointerdown)="onCanvasDown()" (pointermove)="movePointer($event)"
+            (pointerup)="endPointer($event)" (pointercancel)="endPointer($event)">
+            <defs>
+              <pattern id="canvas-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#243645" stroke-width=".6"/>
+              </pattern>
+            </defs>
+            <rect width="1200" height="700" fill="#10202c"/>
+            @if(gridVisible() && !previewMode()){
+              <rect width="1200" height="700" fill="url(#canvas-grid)" pointer-events="none"/>
+            }
+            @for(shape of activePage().shapes;track shape.id){
+              <g class="canvas-node" [attr.transform]="'translate('+displayX(shape)+','+displayY(shape)+')'"
+                (pointerdown)="beginDrag($event,shape)">
+                @switch(shape.kind){
+                  @case('rect'){
+                    <rect x="0" y="0" [attr.width]="shape.width" [attr.height]="shape.height"
+                      [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="2"/>
+                  }
+                  @case('ellipse'){
+                    <ellipse [attr.cx]="shape.width/2" [attr.cy]="shape.height/2"
+                      [attr.rx]="shape.width/2" [attr.ry]="shape.height/2"
+                      [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="2"/>
+                  }
+                  @case('line'){
+                    <line x1="0" y1="0" [attr.x2]="shape.width" [attr.y2]="shape.height"
+                      [attr.stroke]="shape.stroke" stroke-width="4"/>
+                    <line x1="0" y1="0" [attr.x2]="shape.width" [attr.y2]="shape.height"
+                      stroke="transparent" stroke-width="18"/>
+                  }
+                  @case('text'){
+                    <text x="0" y="26" [attr.fill]="shape.fill" font-size="24"
+                      font-family="Segoe UI, Arial, sans-serif">{{shape.text}}</text>
+                  }
+                  @case('breaker'){
+                    <rect x="0" y="0" [attr.width]="shape.width" [attr.height]="shape.height"
+                      [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="3" rx="3"/>
+                    <path [attr.d]="'M 8 10 L '+(shape.width-8)+' '+(shape.height-10)"
+                      [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
+                  }
+                }
+                @if(selectedId()===shape.id && !previewMode()){
+                  <rect x="-6" y="-6" [attr.width]="shape.width+12" [attr.height]="shape.height+12"
+                    fill="none" stroke="#ffca74" stroke-width="1.8" stroke-dasharray="5 4"
+                    pointer-events="none"/>
+                }
+              </g>
+            }
+          </svg>
+        </div>
+      </div>
+      <div class="canvas-footer"><span>1200 × 700 • SVG Workspace</span><span>All values shown are design placeholders, not live equipment data</span></div>
+    </main>
+
+    <aside class="inspector">
+      <div class="pane-heading">PROPERTIES</div>
+      @if(selected();as shape){
+        <div class="inspector-section">
+          <label>Object name<input type="text" [value]="shape.name" maxlength="100" (change)="updateProperty('name',$event)"></label>
+          <div class="helper">{{shape.kind}} · {{shape.id}}</div>
+        </div>
+        <div class="inspector-section">
+          <h3>TRANSFORM</h3>
+          <div class="field-grid">
+            <label>X<input type="number" [value]="shape.x" (change)="updateProperty('x',$event)"></label>
+            <label>Y<input type="number" [value]="shape.y" (change)="updateProperty('y',$event)"></label>
+            <label>Width<input type="number" min="1" [value]="shape.width" (change)="updateProperty('width',$event)"></label>
+            <label>Height<input type="number" min="1" [value]="shape.height" (change)="updateProperty('height',$event)"></label>
+          </div>
+        </div>
+        <div class="inspector-section">
+          <h3>APPEARANCE</h3>
+          <div class="field-grid">
+            <label>Fill<input type="color" [value]="shape.fill" (change)="updateProperty('fill',$event)"></label>
+            <label>Stroke<input type="color" [value]="shape.stroke" (change)="updateProperty('stroke',$event)"></label>
+          </div>
+          @if(shape.kind==='text'){
+            <label>Text<input type="text" [value]="shape.text" maxlength="160" (change)="updateProperty('text',$event)"></label>
+          }
+        </div>
+        <div class="inspector-section">
+          <h3>TAG BINDING (METADATA)</h3>
+          <label>Tag identifier<input type="text" placeholder="Device/Tag" maxlength="160" [value]="shape.tagId" (change)="updateProperty('tagId',$event)"></label>
+          <p class="helper">Live tag runtime is not yet implemented.</p>
+        </div>
+        <div class="inspector-section">
+          <button type="button" class="danger" (click)="removeSelected()">Delete selected object</button>
+        </div>
+      } @else {
+        <div class="empty-inspector"><span>◇</span><p>Select an object on canvas or in Layers to edit properties.</p></div>
+      }
+    </aside>
+  </div>
+  <footer class="statusbar"><span class="status-dot"></span>{{status()}}
+    <span class="grow"></span><span>Local editor · No industrial connection</span><span class="version">v0.1.0</span></footer>
+</div>
