@@ -6,11 +6,12 @@ import {timingSafeEqual,createHash} from 'node:crypto';
 import type {IncomingMessage,ServerResponse} from 'node:http';
 import {validateModbusConfig,type ModbusConfig} from '../src/shared/modbus-mapping.ts';
 import type {DeviceRuntime} from './device-runtime.ts';
+import type {DeviceFleetRuntime} from './device-fleet-runtime.ts';
 const MAX_BODY=48*1024;
 const API_PREFIX='/api/device/';
 export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
  token:string;origins:readonly string[]
-}):(req:IncomingMessage,res:ServerResponse)=>boolean {
+},fleet?:DeviceFleetRuntime):(req:IncomingMessage,res:ServerResponse)=>boolean {
  if(settings.token.length<32||settings.token.length>1024)
   throw Error('HMI_ADMIN_TOKEN must contain 32–1024 characters');
  const secret=createHash('sha256').update(settings.token).digest();
@@ -28,7 +29,9 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
   return timingSafeEqual(secret,digest);
  };
  return (req,res)=>{
-  if(!req.url?.startsWith(API_PREFIX))return false;
+  const isFleet=req.url==='/api/fleet'||req.url==='/api/fleet/apply'||
+   req.url==='/api/fleet/test';
+  if(!req.url?.startsWith(API_PREFIX)&&!isFleet)return false;
   const origin=req.headers.origin;
   if(!origin||!origins.has(origin)){
    respond(res,403,{error:'Origin denied'});return true;
@@ -42,11 +45,22 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
    res.setHeader('WWW-Authenticate','Bearer realm="Device management"');
    respond(res,401,{error:'Administrator authorization required'});return true;
   }
+  if(req.url==='/api/fleet'&&req.method==='GET'){
+   if(!fleet){respond(res,404,{error:'Multi-PLC support unavailable'});return true;}
+   respond(res,200,fleet.snapshot());return true;
+  }
+  if(fleet?.isActive()&&req.url?.startsWith(API_PREFIX)){
+   respond(res,409,{error:'Multiple PLCs active. Use Devices & Tags fleet manager'});
+   return true;
+  }
   if(req.url==='/api/device/status'&&req.method==='GET'){
    respond(res,200,runtime.snapshot());return true;
   }
   const testOnly=req.url==='/api/device/test'&&req.method==='POST';
-  if(!testOnly&&(req.url!=='/api/device/apply'||req.method!=='POST')){
+  const fleetTest=req.url==='/api/fleet/test'&&req.method==='POST';
+  const fleetApply=req.url==='/api/fleet/apply'&&req.method==='POST';
+  if(!testOnly&&!fleetTest&&!fleetApply&&
+    (req.url!=='/api/device/apply'||req.method!=='POST')){
    respond(res,404,{error:'Unknown device command'});return true;
   }
   if(req.headers['content-type']?.split(';')[0]?.trim()!=='application/json'){
@@ -58,20 +72,37 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
     for await(const chunk of req){
      const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
      size+=bytes.length;
-     if(size>MAX_BODY)throw Error('Configuration exceeds 48 KiB');
+     if(size>(isFleet?512*1024:MAX_BODY))
+      throw Error('Configuration request too large');
      parts.push(bytes);
     }
     const body=JSON.parse(Buffer.concat(parts).toString('utf8')) as Record<string,unknown>;
-    if(!body||typeof body!=='object'||Array.isArray(body)||
-      (testOnly?Object.keys(body).some(key=>key!=='config'):
-       Object.keys(body).some(key=>!['revision','config'].includes(key))||
-       !Number.isSafeInteger(body['revision'])||
-       typeof body['revision']!=='number'))
+    if(!body||typeof body!=='object'||Array.isArray(body))
       throw Error('Invalid configuration envelope');
-    const config=validateModbusConfig(body['config'] as ModbusConfig);
-    const result=testOnly?await runtime.testConnection(config):
-      await runtime.apply(config,body['revision'] as number);
-    respond(res,200,{ok:true,...result});
+    if(fleetTest||fleetApply){
+      if(!fleet)throw Error('Multi-PLC runtime unavailable');
+      const names=Object.keys(body);
+      if(fleetTest){
+       if(names.some(key=>key!=='device'))throw Error('Invalid PLC test payload');
+       const result=await fleet.testDevice(body['device']);
+       respond(res,200,result);
+      }else{
+       if(names.some(key=>!['revision','devices'].includes(key))||
+         !Number.isSafeInteger(body['revision']))
+         throw Error('Invalid fleet revision or device list');
+       const result=await fleet.apply({devices:body['devices']},body['revision'] as number);
+       respond(res,200,{ok:true,...result});
+      }
+    }else{
+      if(testOnly?Object.keys(body).some(key=>key!=='config'):
+         Object.keys(body).some(key=>!['revision','config'].includes(key))||
+         !Number.isSafeInteger(body['revision']))
+       throw Error('Invalid configuration envelope');
+      const config=validateModbusConfig(body['config'] as ModbusConfig);
+      const result=testOnly?await runtime.testConnection(config):
+        await runtime.apply(config,body['revision'] as number);
+      respond(res,200,{ok:true,...result});
+    }
    }catch(error){
     const msg=error instanceof Error?error.message:'Configuration failed';
     const conflict=/conflict|in progress/.test(msg);

@@ -77,3 +77,9 @@ See [CP-11 architecture](docs/architecture/CP11.md).
 From **Devices & Tags**, use **Test PLC** for a read-only connection check before
 applying anything. With a server key, **Check server** displays live connection
 status and concise read counters. See [CP-12](docs/architecture/CP12.md).
+
+## Multiple PLCs in one HMI (CP-13)
+
+Open **Devices & Tags → Multiple PLCs**. Add your PLCs, edit tags, and
+apply them as a group. One server poller per PLC serves every browser over
+the existing WebSocket. See [CP-13 engineering guide](docs/architecture/CP13.md).
