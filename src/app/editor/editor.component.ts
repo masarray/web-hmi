@@ -763,7 +763,7 @@ export class EditorComponent implements OnDestroy {
   }
   private placeCustomSymbol(id:string,x?:number,y?:number):void{
     const def=findDynamicSymbol(id,this.project().customSymbols??[]);
-    if(!def||id==='cb-rotating'&&!!findSymbol(id))return;
+    if(!def)return;
     const shape:Shape={...newShape('rect',this.activePage().shapes.length),
       kind:'symbol',symbolId:id,name:def.name,pointMode:'double-point',
       width:Math.max(40,Math.min(140,def.viewBox[0])),
@@ -801,7 +801,7 @@ export class EditorComponent implements OnDestroy {
     try{
       if(file.size>128_000)throw Error('Maximum symbol file size is 128 KB');
       const def=parseDynamicSymbol(JSON.parse(await file.text()));
-      if(def.id==='cb-rotating'||!!findSymbol(def.id))throw Error('Reserved symbol ID');
+      if(!!findDynamicSymbol(def.id)||!!findSymbol(def.id))throw Error('Reserved symbol ID');
       const custom=this.project().customSymbols??[];
       if(custom.some(x=>x.id===def.id))throw Error('Symbol already exists: '+def.id);
       if(custom.length>=128)throw Error('Maximum 128 custom symbols');
