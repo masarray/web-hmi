@@ -1,4 +1,5 @@
 import {createServer,type Server} from 'node:http';
+import type {IncomingMessage,ServerResponse} from 'node:http';
 import {WebSocketServer,WebSocket} from 'ws';
 import {parseSubscription,validSample,TAG_STALE_AFTER_MS,type WireSample,type ServerMessage} from '../src/shared/tag-protocol.ts';
 const MAX_CLIENTS=64,MAX_BUFFERED=131072;
@@ -7,6 +8,9 @@ export interface TagHub {
  readonly http:Server;
  publish:(sample:WireSample)=>boolean;
  metrics:()=>{clients:number;subscriptions:number;sourceTicks:number;droppedClients:number};
+ resetSource:(source:'DEMO'|'MODBUS_LAB'|'MODBUS_TCP')=>void;
+ stopDemo:()=>void;
+ setControlHandler:(handler:(req:IncomingMessage,res:ServerResponse)=>boolean)=>void;
  close:()=>Promise<void>;
 }
 /** One source and one acquisition stream fan out across all browser subscribers. */
@@ -27,13 +31,21 @@ export function createTagHub(opts:{
  const MAX_SOURCE_TAGS=8192;
  const pong=new WeakMap<WebSocket,number>();
  let sourceTicks=0,droppedClients=0,closed=false;
+ let sourceKind=opts.source??'DEMO';
+ let controlHandler:((req:IncomingMessage,res:ServerResponse)=>boolean)|null=null;
  const http=createServer((req,res)=>{
+  if(controlHandler?.(req,res))return;
   if(req.method==='GET'&&req.url==='/health'){
    res.writeHead(200,{'Content-Type':'application/json; charset=utf-8',
     'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
-   res.end(JSON.stringify({status:'ok',source:opts.source??'DEMO',protocol:1,readOnly:true}));
+   res.end(JSON.stringify({status:'ok',source:sourceKind,protocol:1,readOnly:true}));
   }else{res.writeHead(404,{'Content-Type':'text/plain'});res.end('Not found');}
  });
+ function resetSource(source:'DEMO'|'MODBUS_LAB'|'MODBUS_TCP'):void{
+  sourceKind=source;
+  samples.clear();sampleTimes.clear();
+  for(const ws of clients.keys())emit(ws,{type:'source-reset',source});
+ }
  const wss=new WebSocketServer({noServer:true,maxPayload:32768,perMessageDeflate:false});
  const emit=(ws:WebSocket,msg:ServerMessage)=>{
   if(ws.readyState!==WebSocket.OPEN)return;
@@ -67,7 +79,7 @@ export function createTagHub(opts:{
  wss.on('connection',ws=>{
   clients.set(ws,new Set());pong.set(ws,Date.now());
   ws.on('pong',()=>pong.set(ws,Date.now()));
-  emit(ws,{type:'hello',version:1,source:opts.source??'DEMO',heartbeatMs});
+  emit(ws,{type:'hello',version:1,source:sourceKind,heartbeatMs});
   ws.on('message',buf=>{
    let tags:string[];
    try{tags=parseSubscription(JSON.parse(buf.toString())).tags;}
@@ -110,7 +122,9 @@ export function createTagHub(opts:{
   },opts.sourceIntervalMs??1000);
   sourceTimer.unref();
  }
- return {http,publish,metrics:()=>({
+ return {http,publish,resetSource,stopDemo:()=>{if(sourceTimer)clearInterval(sourceTimer);
+  sourceTimer=undefined;},
+ setControlHandler:handler=>{controlHandler=handler;},metrics:()=>({
   clients:clients.size,subscriptions:[...index.values()].reduce((n,set)=>n+set.size,0),
   sourceTicks,droppedClients
  }),close:async()=>{

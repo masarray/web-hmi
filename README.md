@@ -60,3 +60,14 @@ validated mapping to the server's \`config/\` directory and start
 \`HMI_SOURCE=modbus-tcp HMI_MODBUS_CONFIG_FILE=plant-a.json npm run start:server\`
 to read the explicitly configured industrial endpoint. No device writes
 are enabled. See [CP-10 engineering guide](docs/architecture/CP10.md).
+
+
+## Direct device configuration apply (CP-11)
+
+Run the Node server with \`HMI_ADMIN_TOKEN\` set to a random value of at
+least 32 characters. In **Devices & Tags**, enter that administrator
+token, select **Check server**, then **Apply to server** to verify and
+activate the selected read-only Modbus mapping without manual JSON copying
+or server restart. Configuration is saved atomically for recovery; an
+unresponsive candidate does not displace a healthy active source.
+See [CP-11 architecture](docs/architecture/CP11.md).

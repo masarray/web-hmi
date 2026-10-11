@@ -91,9 +91,10 @@
             <button type="button" (click)="toggleMapping()" aria-label="Close device mapper">✕ Close</button>
           </div>
           <div class="mapping-hint">
-            Enter the device address once, map your tags, then export a validated
-            configuration file. The server loads that file when started.
-            The browser never sends device settings or control commands directly to PLCs.
+            Edit the device and tags, connect with your administrator token,
+            and apply the configuration directly to the Node server. A candidate
+            must pass a live read test before the active source is switched.
+            No PLC write functions are enabled. JSON export remains available as backup.
           </div>
           <div class="mapping-device">
             <label>Device IP / host
@@ -127,6 +128,21 @@
             <label class="mapping-import">⇧ Import config
               <input type="file" accept=".json,application/json" (change)="importMapping($event)" hidden>
             </label>
+          </div>
+          <div class="mapping-control">
+            <label>Administrator token (memory only)
+              <input type="password" autocomplete="off" spellcheck="false"
+                aria-label="Server admin token" [value]="adminToken()"
+                (input)="setAdminToken($event)" placeholder="Enter HMI_ADMIN_TOKEN">
+            </label>
+            <button type="button" [disabled]="deviceBusy()||adminToken().length<32"
+              (click)="checkDeviceStatus()">Check server</button>
+            <button type="button" class="mapping-apply"
+              [disabled]="deviceBusy()||!mappingValidation().ok||deviceRevision()===null"
+              (click)="applyDeviceMapping()">Apply to server</button>
+            <span data-testid="device-runtime-health">Server: {{deviceHealth()}}
+              @if(deviceRevision()!==null){· Revision {{deviceRevision()}}}
+            </span>
           </div>
           <div class="mapping-table-wrap">
             <table class="mapping-table" aria-label="Modbus register mappings">

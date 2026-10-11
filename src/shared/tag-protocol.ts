@@ -9,6 +9,7 @@ export interface WireSample{tagId:string;value:boolean|number|null;quality:WireQ
 export type ClientMessage={type:'subscribe';version:1;tags:string[]};
 export type ServerMessage=
  |{type:'hello';version:1;source:'DEMO'|'MODBUS_LAB'|'MODBUS_TCP';heartbeatMs:number}
+ |{type:'source-reset';source:'DEMO'|'MODBUS_LAB'|'MODBUS_TCP'}
  |{type:'subscribed';tags:string[]}
  |{type:'sample';sample:WireSample}
  |{type:'heartbeat';serverTime:number};

@@ -102,7 +102,12 @@ export class EditorComponent implements OnDestroy {
   readonly mappingDraft=signal<ModbusConfig>(restoreMapping());
   readonly mappingSearch=signal('');
   readonly mappingLimit=signal(40);
-  readonly mappingStatus=signal('Example mapping · edit and export to configure the Node tag server');
+  readonly mappingStatus=signal('Edit mapping and apply it directly to the configured server');
+  readonly adminToken=signal('');
+  readonly deviceRevision=signal<number|null>(null);
+  readonly deviceHealth=signal('NOT CONNECTED');
+  readonly deviceBusy=signal(false);
+  readonly deviceConfigured=signal(false);
   readonly mappingTypes=REGISTER_TYPES;
   readonly mappingValidation=computed(()=>{
     try{
@@ -208,6 +213,69 @@ export class EditorComponent implements OnDestroy {
       this.record(editShape(this.project(),selected.id,{tagId:id}));
       this.status.set('Bound '+selected.name+' to '+id);
     }catch(error){this.status.set(String(error));}
+  }
+  setAdminToken(event:Event):void{
+    this.adminToken.set((event.target as HTMLInputElement).value);
+    this.deviceRevision.set(null);
+    this.deviceHealth.set('NOT CONNECTED');
+  }
+  private deviceApiUrl(path:'status'|'apply'):string{
+    // Dev serves Angular on :4200; production should proxy /api/device on the
+    // same TLS origin as the HMI frontend, never to an arbitrary device host.
+    const port=location.port==='4200'?':8787':'';
+    return location.protocol+'//'+location.hostname+port+'/api/device/'+path;
+  }
+  private async deviceRequest(path:'status'|'apply',body?:unknown):Promise<{
+    revision:number;health:string;configured:boolean
+  }>{
+    if(this.adminToken().length<32)throw Error('Enter an administrator token (32+ characters)');
+    const response=await fetch(this.deviceApiUrl(path),{
+      method:path==='apply'?'POST':'GET',mode:'cors',credentials:'omit',
+      signal:AbortSignal.timeout(30000),
+      headers:{Authorization:'Bearer '+this.adminToken(),
+        ...(body===undefined?{}:{'Content-Type':'application/json'})},
+      ...(body===undefined?{}:{body:JSON.stringify(body)})
+    });
+    const result=await response.json() as {
+      revision?:number;health?:string;configured?:boolean;error?:string
+    };
+    if(!response.ok)throw Error(result.error??('Server HTTP '+response.status));
+    if(!Number.isSafeInteger(result.revision)||typeof result.health!=='string'||
+      typeof result.configured!=='boolean')throw Error('Invalid server response');
+    return {revision:result.revision!,health:result.health,
+      configured:result.configured};
+  }
+  async checkDeviceStatus():Promise<void>{
+    if(this.deviceBusy())return;
+    this.deviceBusy.set(true);
+    try{
+      const state=await this.deviceRequest('status');
+      this.deviceRevision.set(state.revision);
+      this.deviceHealth.set(state.health);
+      this.deviceConfigured.set(state.configured);
+      this.mappingStatus.set('Connected to configuration server · revision '+state.revision);
+    }catch(error){
+      this.mappingStatus.set('Server status failed: '+String(error));
+      this.deviceRevision.set(null);
+    }finally{this.deviceBusy.set(false);}
+  }
+  async applyDeviceMapping():Promise<void>{
+    if(this.deviceBusy()||!this.mappingValidation().ok||
+      this.deviceRevision()===null)return;
+    this.deviceBusy.set(true);
+    try{
+      const state=await this.deviceRequest('apply',{
+        revision:this.deviceRevision(),config:validateModbusConfig(this.mappingDraft())
+      });
+      this.deviceRevision.set(state.revision);
+      this.deviceHealth.set(state.health);
+      this.deviceConfigured.set(state.configured);
+      this.mappingStatus.set('Configuration applied · revision '+state.revision+
+        ' · source '+state.health);
+    }catch(error){
+      this.mappingStatus.set('Apply failed; previous source retained: '+String(error));
+      this.deviceRevision.set(null); // explicit reconnect prevents blind retries
+    }finally{this.deviceBusy.set(false);}
   }
   exportMapping():void{
     try{
