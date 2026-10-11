@@ -49,3 +49,14 @@ including configurable 32-bit word order. See
 To validate your mapping **without opening a Modbus connection**, run
 \`npm run check:modbus -- modbus-lab.example.json\`. The default demo
 server and all existing graphical editor workflows remain unchanged.
+
+
+## Smart industrial Modbus tag mapping (CP-10)
+
+In Web HMI Studio, choose **Devices & Tags** to configure device IP,
+FC01/02/03/04, data type and registers without editing JSON. Bind
+graphical objects to named tags from their Inspector. Export the
+validated mapping to the server's \`config/\` directory and start
+\`HMI_SOURCE=modbus-tcp HMI_MODBUS_CONFIG_FILE=plant-a.json npm run start:server\`
+to read the explicitly configured industrial endpoint. No device writes
+are enabled. See [CP-10 engineering guide](docs/architecture/CP10.md).

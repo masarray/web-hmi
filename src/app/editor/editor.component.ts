@@ -5,6 +5,9 @@ import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
 import {TagStreamClient,type StreamStatus} from './tag-stream-client';
+import {validateModbusConfig,planReads,widthOf,dataTypeOf,
+  type ModbusConfig,type RegisterTag,type ReadFunction,
+  type DataType,type WordOrder} from '../../shared/modbus-mapping.ts';
 import {evaluatePage,evaluatePartAppearance,updateTagSample,
   nextFreshnessDeadline,STALE_AFTER_MS,type TagQuality,type TagTable,
   type VisualState,type PartEffect,type PartAppearance} from './visual-runtime';
@@ -12,6 +15,24 @@ import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } f
 import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align, type Axis } from './selection-ops';
 
 const STORAGE_KEY='web-hmi.project.v1';
+const MODBUS_KEY='web-hmi.modbus-map.v1';
+const MAX_MAPPING_BYTES=131072;
+type MappingField='tagId'|'functionCode'|'address'|'dataType'|'wordOrder';
+type DeviceField='host'|'port'|'unitId'|'pollMs'|'requestTimeoutMs';
+const REGISTER_TYPES:readonly DataType[]=['uint16','int16','uint32','int32','float32'];
+function defaultMapping():ModbusConfig {
+ return {host:'127.0.0.1',port:502,unitId:1,pollMs:1000,
+  requestTimeoutMs:800,tags:[{tagId:'Plant/Motor',functionCode:3,address:0,dataType:'uint16'}]};
+}
+function restoreMapping():ModbusConfig {
+ try{
+  const raw=localStorage.getItem(MODBUS_KEY);
+  if(raw && raw.length<MAX_MAPPING_BYTES)
+   return validateModbusConfig(JSON.parse(raw) as ModbusConfig);
+ }catch{/* invalid local data never activates industrial connections */}
+ return defaultMapping();
+}
+
 type Drag={id:string;pointerId:number;startX:number;startY:number;original:Shape;members:Shape[];mode:'move'|'resize'};
 type DragPreview={id:string;x:number;y:number;width:number;height:number};
 
@@ -33,7 +54,7 @@ export class EditorComponent implements OnDestroy {
   readonly previewMode=signal(false);
   readonly previewSource=signal<'local'|'server'>('local');
   readonly serverStatus=signal<StreamStatus>('disconnected');
-  readonly serverKind=signal<'DEMO'|'MODBUS_LAB'>('DEMO');
+  readonly serverKind=signal<'DEMO'|'MODBUS_LAB'|'MODBUS_TCP'>('DEMO');
   readonly serverSamples=signal<TagTable>(new Map());
   /** Transient test-feed, never saved to project or undo history. */
   readonly simulatedSamples=signal<TagTable>(new Map());
@@ -77,6 +98,34 @@ export class EditorComponent implements OnDestroy {
     this.activePage().shapes.find(s=>s.id===this.selectedId())??null);
   readonly preview=signal<DragPreview|null>(null);
   readonly dragOffsets=signal<Record<string,{x:number;y:number}>>({});
+  readonly mappingOpen=signal(false);
+  readonly mappingDraft=signal<ModbusConfig>(restoreMapping());
+  readonly mappingSearch=signal('');
+  readonly mappingLimit=signal(40);
+  readonly mappingStatus=signal('Example mapping · edit and export to configure the Node tag server');
+  readonly mappingTypes=REGISTER_TYPES;
+  readonly mappingValidation=computed(()=>{
+    try{
+      const safe=validateModbusConfig(this.mappingDraft());
+      const groups=planReads(safe.tags);
+      return {ok:true,problem:'',requestCount:groups.length,groups};
+    }catch(error){
+      return {ok:false,problem:error instanceof Error?error.message:String(error),
+        requestCount:0,groups:[]};
+    }
+  });
+  readonly mappingRows=computed(()=>{
+    const q=this.mappingSearch().trim().toLowerCase();
+    return this.mappingDraft().tags.map((tag,index)=>({tag,index}))
+      .filter(item=>!q||item.tag.tagId.toLowerCase().includes(q)||
+        String(item.tag.address).includes(q))
+      .slice(0,this.mappingLimit());
+  });
+  readonly mappingMatches=computed(()=>{
+    const q=this.mappingSearch().trim().toLowerCase();
+    return this.mappingDraft().tags.filter(tag=>!q||
+      tag.tagId.toLowerCase().includes(q)||String(tag.address).includes(q)).length;
+  });
   readonly symbolSearch=signal('');
   readonly symbolCategory=signal<SymbolCategory>('All');
   readonly symbolCategories=SYMBOL_CATEGORIES;
@@ -87,6 +136,102 @@ export class EditorComponent implements OnDestroy {
   readonly symbolLimit=signal(24);
   readonly symbolVisible=computed(()=>this.symbolMatches().slice(0,this.symbolLimit()));
   showMoreSymbols():void{this.symbolLimit.update(n=>Math.min(n+24,this.symbolTotal));}
+  toggleMapping():void{
+    if(this.previewMode())return;
+    this.mappingOpen.update(open=>!open);
+  }
+  showMoreMappings():void{
+    this.mappingLimit.update(v=>Math.min(v+40,this.mappingDraft().tags.length));
+  }
+  searchMappings(event:Event):void{
+    this.mappingSearch.set((event.target as HTMLInputElement).value);
+    this.mappingLimit.set(40);
+  }
+  dataTypeOfMapping(tag:RegisterTag):DataType{return dataTypeOf(tag);}
+  widthOfMapping(tag:RegisterTag):number{return widthOf(tag);}
+  mappingTypesFor(fc:ReadFunction):readonly DataType[]{
+    return fc<=2?['bool']:REGISTER_TYPES;
+  }
+  setDeviceField(field:DeviceField,event:Event):void{
+    const input=event.target as HTMLInputElement;
+    const value=field==='host'?input.value:Number(input.value);
+    this.applyMapping({...this.mappingDraft(),[field]:value});
+  }
+  private applyMapping(next:ModbusConfig):void{
+    this.mappingDraft.set(next);
+    try{
+      const safe=validateModbusConfig(next);
+      localStorage.setItem(MODBUS_KEY,JSON.stringify(safe));
+      this.mappingStatus.set('Mapping saved locally · export to activate on Node server');
+    }catch(error){
+      this.mappingStatus.set('Fix mapping: '+String(error instanceof Error?error.message:error));
+    }
+  }
+  setMappingField(index:number,field:MappingField,event:Event):void{
+    const old=this.mappingDraft().tags[index];
+    if(!old)return;
+    const input=event.target as HTMLInputElement|HTMLSelectElement;
+    const value=field==='address'||field==='functionCode'?Number(input.value):input.value;
+    let changed:RegisterTag={...old,[field]:value};
+    if(field==='functionCode'){
+      const fc=value as ReadFunction;
+      changed={...changed,dataType:fc<=2?'bool':'uint16',wordOrder:undefined};
+    }
+    if(field==='dataType'&&!['float32','int32','uint32'].includes(String(value)))
+      changed={...changed,wordOrder:undefined};
+    const tags=[...this.mappingDraft().tags];
+    tags[index]=changed;
+    this.applyMapping({...this.mappingDraft(),tags});
+  }
+  addMappedTag():void{
+    const tags=this.mappingDraft().tags;
+    if(tags.length>=128){this.mappingStatus.set('Maximum 128 tags per device');return;}
+    const names=new Set(tags.map(t=>t.tagId));
+    let count=1;
+    while(names.has('Tag_'+count))count++;
+    const last=tags.at(-1);
+    const address=last?Math.min(65535,last.address+widthOf(last)):0;
+    const next:RegisterTag={tagId:'Tag_'+count,functionCode:3,address,dataType:'uint16'};
+    this.applyMapping({...this.mappingDraft(),tags:[...tags,next]});
+    this.mappingSearch.set('');
+    this.mappingLimit.set(Math.max(this.mappingLimit(),tags.length+1));
+  }
+  deleteMappedTag(index:number):void{
+    this.applyMapping({...this.mappingDraft(),
+      tags:this.mappingDraft().tags.filter((_,i)=>i!==index)});
+  }
+  bindMappedTag(event:Event):void{
+    const id=(event.target as HTMLSelectElement).value;
+    const selected=this.selected();
+    if(!selected||!this.mappingDraft().tags.some(tag=>tag.tagId===id))return;
+    try{
+      this.record(editShape(this.project(),selected.id,{tagId:id}));
+      this.status.set('Bound '+selected.name+' to '+id);
+    }catch(error){this.status.set(String(error));}
+  }
+  exportMapping():void{
+    try{
+      const safe=validateModbusConfig(this.mappingDraft());
+      const blob=new Blob([JSON.stringify(safe,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement('a');
+      link.href=url;link.download='modbus-device.json';link.click();
+      URL.revokeObjectURL(url);
+      this.mappingStatus.set('Valid Modbus mapping exported · load it on Node server');
+    }catch(error){this.mappingStatus.set('Export blocked: '+String(error));}
+  }
+  async importMapping(event:Event):Promise<void>{
+    const input=event.target as HTMLInputElement;
+    const file=input.files?.[0];input.value='';
+    if(!file)return;
+    try{
+      if(file.size>MAX_MAPPING_BYTES)throw Error('Maximum Modbus file size 128 KiB');
+      const safe=validateModbusConfig(JSON.parse(await file.text()) as ModbusConfig);
+      this.applyMapping(safe);
+      this.mappingStatus.set('Modbus mapping validated and imported');
+    }catch(error){this.mappingStatus.set('Import rejected: '+String(error));}
+  }
+
   readonly palette:{kind:ShapeKind;label:string;glyph:string}[]=[
     {kind:'rect',label:'Rectangle',glyph:'▭'},
     {kind:'ellipse',label:'Ellipse',glyph:'◯'},
@@ -403,6 +548,7 @@ export class EditorComponent implements OnDestroy {
     }
   }
   togglePreview():void {
+    if(this.mappingOpen())this.mappingOpen.set(false);
     this.previewMode.update(v=>!v);
     this.selectOnly(null);
     this.freshnessClock.set(Date.now());

@@ -9,6 +9,8 @@
       @if(selected() && !previewMode()){
         <button type="button" (click)="duplicateSelected()" aria-label="Duplicate selected object" title="Duplicate selected object (Ctrl+D)">⧉ Duplicate</button>
       }
+      <button type="button" aria-label="Configure Modbus tags" [class.on]="mappingOpen()"
+        (click)="toggleMapping()">⚙ Devices & Tags</button>
       <button type="button" (click)="exportProject()">⇩ Export</button>
       <label class="file-label">⇧ Import <input type="file" accept="application/json,.json" (change)="importProject($event)" hidden></label>
       <button type="button" class="primary" (click)="togglePreview()">{{previewMode()?'Exit Preview':'▶ Preview'}}</button>
@@ -81,6 +83,120 @@
     </aside>
 
     <main class="center">
+      @if(mappingOpen()){
+        <section class="mapping-panel" aria-label="Modbus tag mapping editor" data-testid="mapping-editor">
+          <div class="mapping-head">
+            <div><strong>Device & Tag Mapping</strong>
+              <span>Modbus TCP · FC01/02/03/04 · read-only engineering</span></div>
+            <button type="button" (click)="toggleMapping()" aria-label="Close device mapper">✕ Close</button>
+          </div>
+          <div class="mapping-hint">
+            Enter the device address once, map your tags, then export a validated
+            configuration file. The server loads that file when started.
+            The browser never sends device settings or control commands directly to PLCs.
+          </div>
+          <div class="mapping-device">
+            <label>Device IP / host
+              <input aria-label="Modbus device host" type="text" [value]="mappingDraft().host"
+                (change)="setDeviceField('host',$event)">
+            </label>
+            <label>TCP port
+              <input aria-label="Modbus TCP port" type="number" min="1" max="65535"
+                [value]="mappingDraft().port" (change)="setDeviceField('port',$event)">
+            </label>
+            <label>Unit ID
+              <input aria-label="Modbus unit ID" type="number" min="1" max="247"
+                [value]="mappingDraft().unitId" (change)="setDeviceField('unitId',$event)">
+            </label>
+            <label>Poll interval (ms)
+              <input aria-label="Modbus polling interval" type="number" min="50" max="60000"
+                [value]="mappingDraft().pollMs??1000"
+                (change)="setDeviceField('pollMs',$event)">
+            </label>
+            <label>Timeout (ms)
+              <input aria-label="Modbus request timeout" type="number" min="40" max="10000"
+                [value]="mappingDraft().requestTimeoutMs??800"
+                (change)="setDeviceField('requestTimeoutMs',$event)">
+            </label>
+          </div>
+          <div class="mapping-actions">
+            <input type="search" aria-label="Search mapped tags" placeholder="Search tag or address..."
+              [value]="mappingSearch()" (input)="searchMappings($event)">
+            <button type="button" (click)="addMappedTag()">＋ Add tag</button>
+            <button type="button" [disabled]="!mappingValidation().ok" (click)="exportMapping()">⇩ Export config</button>
+            <label class="mapping-import">⇧ Import config
+              <input type="file" accept=".json,application/json" (change)="importMapping($event)" hidden>
+            </label>
+          </div>
+          <div class="mapping-table-wrap">
+            <table class="mapping-table" aria-label="Modbus register mappings">
+              <thead><tr><th>Tag ID</th><th>Memory</th><th>0-based address</th>
+                <th>Type</th><th>Word order</th><th></th></tr></thead>
+              <tbody>
+                @for(row of mappingRows();track row.index){
+                  <tr>
+                    <td><input [attr.aria-label]="'Tag ID row '+(row.index+1)"
+                      [value]="row.tag.tagId" maxlength="160"
+                      (change)="setMappingField(row.index,'tagId',$event)"></td>
+                    <td><select [attr.aria-label]="'Memory area row '+(row.index+1)"
+                      [value]="row.tag.functionCode"
+                      (change)="setMappingField(row.index,'functionCode',$event)">
+                      <option value="1">FC01 Coils</option>
+                      <option value="2">FC02 Inputs</option>
+                      <option value="3">FC03 Holding</option>
+                      <option value="4">FC04 Input registers</option>
+                    </select></td>
+                    <td><input type="number" min="0" max="65535"
+                      [attr.aria-label]="'Address row '+(row.index+1)"
+                      [value]="row.tag.address" (change)="setMappingField(row.index,'address',$event)"></td>
+                    <td><select [attr.aria-label]="'Data type row '+(row.index+1)"
+                      [value]="dataTypeOfMapping(row.tag)"
+                      (change)="setMappingField(row.index,'dataType',$event)">
+                      @for(type of mappingTypesFor(row.tag.functionCode);track type){
+                        <option [value]="type">{{type}}</option>
+                      }
+                    </select></td>
+                    <td><select [attr.aria-label]="'Word order row '+(row.index+1)"
+                      [disabled]="widthOfMapping(row.tag)!==2"
+                      [value]="row.tag.wordOrder??'ABCD'"
+                      (change)="setMappingField(row.index,'wordOrder',$event)">
+                      <option value="ABCD">ABCD</option><option value="CDAB">CDAB</option>
+                    </select></td>
+                    <td><button type="button" [attr.aria-label]="'Delete mapped tag row '+(row.index+1)"
+                      (click)="deleteMappedTag(row.index)">✕</button></td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="6">No tags match. Clear search or add a tag.</td></tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if(mappingRows().length<mappingMatches()){
+            <button type="button" class="mapping-more" (click)="showMoreMappings()">
+              Show more mapped tags ({{mappingMatches()-mappingRows().length}} remaining)
+            </button>
+          }
+          <div class="mapping-summary" [class.invalid]="!mappingValidation().ok">
+            @if(mappingValidation().ok){
+              <strong>Valid: {{mappingDraft().tags.length}} tags · {{mappingValidation().requestCount}} read requests/cycle</strong>
+              <span>Zero-based addressing · contiguous ranges coalesced · no write functions</span>
+            } @else {
+              <strong>Check mapping: {{mappingValidation().problem}}</strong>
+              <span>Export disabled until all fields are valid</span>
+            }
+          </div>
+          <p class="mapping-status">{{mappingStatus()}}</p>
+          @if(mappingValidation().ok){
+            <details class="mapping-plan">
+              <summary>Inspect optimized read plan</summary>
+              @for(group of mappingValidation().groups;track $index){
+                <div>FC{{group.functionCode}} · address {{group.start}} · {{group.count}}
+                  {{group.functionCode<=2?'bits':'registers'}} · {{group.tags.length}} tags</div>
+              }
+            </details>
+          }
+        </section>
+      }
       <div class="canvas-toolbar">
         <span class="mode-pill">◇ SVG EDITOR</span>
         <span class="hint">Shift+click: multi-select · drag selection to move · Ctrl+A: select all</span>
@@ -99,7 +215,7 @@
       </div>
       @if(previewMode()){
         <div class="simulation-bar" data-testid="simulation-bar">
-          <strong>{{previewSource()==='local'?'SIMULATION ONLY':serverKind()==='MODBUS_LAB'?'MODBUS LAB · READ ONLY':'SERVER DEMO · READ ONLY'}}</strong>
+          <strong>{{previewSource()==='local'?'SIMULATION ONLY':serverKind()==='MODBUS_LAB'?'MODBUS LAB · READ ONLY':serverKind()==='MODBUS_TCP'?'MODBUS TCP · READ ONLY':'SERVER DEMO · READ ONLY'}}</strong>
           <label>Data source
             <select aria-label="Preview data source" [value]="previewSource()"
               (change)="choosePreviewSource($event)">
@@ -260,7 +376,7 @@
         </div>
       </div>
       <div class="canvas-footer"><span>1200 × 700 • SVG Workspace</span>
-        <span>{{previewMode()?(previewSource()==='server'?'SERVER DEMO — READ ONLY — NO INDUSTRIAL DEVICES':'SIMULATED VALUES — NOT CONNECTED TO INDUSTRIAL EQUIPMENT'):'Design placeholders — no live equipment data'}}</span>
+        <span>{{previewMode()?(previewSource()==='server'?(serverKind()==='MODBUS_TCP'?'MODBUS TCP READ-ONLY — SOURCE QUALITY MONITORED':'SERVER DEMO — READ ONLY — NO INDUSTRIAL DEVICES'):'SIMULATED VALUES — NOT CONNECTED TO INDUSTRIAL EQUIPMENT'):'Design placeholders — no live equipment data'}}</span>
       </div>
     </main>
 
@@ -364,7 +480,18 @@
           }
         </div>
         <div class="inspector-section">
-          <h3>TAG BINDING (SIMULATOR PREVIEW)</h3>
+          <h3>TAG BINDING</h3>
+          @if(mappingDraft().tags.length){
+            <label>Choose mapped device tag
+              <select aria-label="Choose mapped device tag" [value]="shape.tagId"
+                (change)="bindMappedTag($event)">
+                <option value="">Choose a configured tag...</option>
+                @for(tag of mappingDraft().tags;track tag.tagId){
+                  <option [value]="tag.tagId">{{tag.tagId}} · FC{{tag.functionCode}} @ {{tag.address}}</option>
+                }
+              </select>
+            </label>
+          }
           <label>Tag identifier<input type="text" placeholder="Device/Tag" maxlength="160" [value]="shape.tagId" (change)="updateProperty('tagId',$event)"></label>
           @if(shape.kind==='symbol' && shape.tagId){
             <label>Visual activation rule

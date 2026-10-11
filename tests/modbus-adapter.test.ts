@@ -78,14 +78,19 @@ const config=(port:number)=>({
  requestTimeoutMs:95,reconnectMaxMs:180
 });
 
-test('CP08 opt-in config blocks remote hosts, writes, unsafe mappings and overload',()=>{
+test('CP10 explicit endpoints allow industrial LAN while rejecting unsafe mappings and writes',()=>{
  assert.equal(modbusFromEnvironment({}),null);
  assert.equal(modbusFromEnvironment({HMI_SOURCE:'demo'}),null);
- assert.throws(()=>modbusFromEnvironment({
-  HMI_SOURCE:'modbus-lab',HMI_MODBUS_PORT:'15020',
+ assert.equal(modbusFromEnvironment({
+  HMI_SOURCE:'modbus-tcp',HMI_MODBUS_PORT:'15020',
   HMI_MODBUS_HOST:'192.168.1.10',
   HMI_MODBUS_TAGS:JSON.stringify(tags)
- }),/loopback/);
+ })?.host,'192.168.1.10');
+ assert.throws(()=>modbusFromEnvironment({
+  HMI_SOURCE:'modbus-tcp',HMI_MODBUS_PORT:'15020',
+  HMI_MODBUS_HOST:'http://192.168.1.10',
+  HMI_MODBUS_TAGS:JSON.stringify(tags)
+ }),/hostname|address/);
  assert.throws(()=>modbusFromEnvironment({
   HMI_SOURCE:'modbus-lab',HMI_MODBUS_PORT:'15020',
   HMI_MODBUS_TAGS:JSON.stringify([{tagId:'X',functionCode:6,address:0}])

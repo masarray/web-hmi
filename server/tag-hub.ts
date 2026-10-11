@@ -11,7 +11,7 @@ export interface TagHub {
 }
 /** One source and one acquisition stream fan out across all browser subscribers. */
 export function createTagHub(opts:{
- allowedOrigins?:readonly string[];heartbeatMs?:number;sourceIntervalMs?:number;demo?:boolean;staleMs?:number;source?:'DEMO'|'MODBUS_LAB';
+ allowedOrigins?:readonly string[];heartbeatMs?:number;sourceIntervalMs?:number;demo?:boolean;staleMs?:number;source?:'DEMO'|'MODBUS_LAB'|'MODBUS_TCP';
 }={}):TagHub {
  const heartbeatMs=opts.heartbeatMs??1000;
  if(!Number.isInteger(heartbeatMs)||heartbeatMs<100)throw Error('Bad heartbeat');

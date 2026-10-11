@@ -6,7 +6,7 @@ else {
  try{
   const cfg=readLabConfigFile(filename);
   console.log(JSON.stringify({
-   status:'VALIDATED_ONLY',source:'MODBUS_LAB',readOnly:true,
+   status:'VALIDATED_ONLY',source:'MODBUS_TCP',readOnly:true,
    host:cfg.host,port:cfg.port,unitId:cfg.unitId,
    pollMs:cfg.pollMs,requestTimeoutMs:cfg.requestTimeoutMs,
    ...describeReadPlan(cfg)

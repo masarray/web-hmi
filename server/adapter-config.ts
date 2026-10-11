@@ -1,4 +1,4 @@
-/** CP-09: lab-only Modbus configuration with an easy-to-review JSON file. */
+/* CP-10: explicit read-only industrial Modbus endpoint from server configuration. */
 import {readFileSync,lstatSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {validateModbusConfig,planReads,
@@ -21,7 +21,7 @@ export function readLabConfigFile(name:string):Required<ModbusConfig> {
 }
 export function modbusFromEnvironment(env:NodeJS.ProcessEnv):Required<ModbusConfig>|null {
  if(env['HMI_SOURCE']===undefined||env['HMI_SOURCE']==='demo')return null;
- if(env['HMI_SOURCE']!=='modbus-lab')throw Error('Unsupported HMI_SOURCE');
+ if(env['HMI_SOURCE']!=='modbus-lab'&&env['HMI_SOURCE']!=='modbus-tcp')throw Error('Unsupported HMI_SOURCE');
  const file=env['HMI_MODBUS_CONFIG_FILE'];
  if(file!==undefined){
   if(env['HMI_MODBUS_TAGS'])throw Error('Specify config file or inline mappings, not both');
