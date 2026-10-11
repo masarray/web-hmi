@@ -1,26 +1,15 @@
 /**
- * Independent read-only Modbus TCP (FC03/FC04) poller.
- * No write function codes, no arbitrary endpoint configuration, no per-browser sockets.
- * FUXA reference: server/runtime/devices/modbus/index.js (MIT); implementation is original.
+ * CP-09 read-only Modbus TCP poller (FC01/02/03/04).
+ * Grouping/decoding are pure functions; this transport owns one serialized poll loop.
  */
 import {Socket} from 'node:net';
-import {TAG_STALE_AFTER_MS,VALID_TAG,type WireSample} from '../../src/shared/tag-protocol.ts';
+import type {WireSample} from '../../src/shared/tag-protocol.ts';
+import {validateModbusConfig,planReads,decodeTag,
+ type ModbusConfig,type ReadGroup,type ReadFunction} from './modbus-codec.ts';
+export {validateModbusConfig,planReads} from './modbus-codec.ts';
+export type {RegisterTag,ModbusConfig,ReadGroup,DataType,WordOrder} from './modbus-codec.ts';
 
 export type AdapterHealth='DISCONNECTED'|'CONNECTING'|'HEALTHY'|'DEGRADED';
-export interface RegisterTag {
- readonly tagId:string;
- readonly functionCode:3|4;
- readonly address:number;
-}
-export interface ModbusConfig {
- readonly host:string;
- readonly port:number;
- readonly unitId:number;
- readonly tags:readonly RegisterTag[];
- readonly pollMs?:number;
- readonly requestTimeoutMs?:number;
- readonly reconnectMaxMs?:number;
-}
 export interface ReadOnlyAdapter {
  start():void;
  stop():Promise<void>;
@@ -28,62 +17,10 @@ export interface ReadOnlyAdapter {
 }
 export type SampleSink=(sample:WireSample)=>void;
 export type HealthSink=(state:AdapterHealth)=>void;
-const MAX_TAGS=128,MAX_READ=32,MAX_FRAME=260;
-interface ReadGroup {
- readonly functionCode:3|4;
- readonly start:number;
- readonly count:number;
- readonly tags:readonly RegisterTag[];
-}
-export function validateModbusConfig(config:ModbusConfig):Required<ModbusConfig> {
- const pollMs=config.pollMs??1000;
- const requestTimeoutMs=config.requestTimeoutMs??800;
- const reconnectMaxMs=config.reconnectMaxMs??5000;
- // CP-08 laboratory boundary: remote hostnames/IPs are deliberately unsupported.
- if(!['127.0.0.1','::1','localhost'].includes(config.host))
-   throw Error('Only loopback Modbus endpoints are allowed in CP-08');
- if(!Number.isInteger(config.port)||config.port<1||config.port>65535||
-   !Number.isInteger(config.unitId)||config.unitId<1||config.unitId>247||
-   !Number.isInteger(pollMs)||pollMs<50||pollMs>60000||
-   !Number.isInteger(requestTimeoutMs)||requestTimeoutMs<40||
-   requestTimeoutMs>10000||!Number.isInteger(reconnectMaxMs)||
-   reconnectMaxMs<100||reconnectMaxMs>30000)
-   throw Error('Invalid Modbus connection limits');
- if(!Array.isArray(config.tags)||config.tags.length===0||config.tags.length>MAX_TAGS)
-   throw Error('Invalid tag count');
- const seen=new Set<string>();
- for(const tag of config.tags){
-   if(!tag||!VALID_TAG.test(tag.tagId)||seen.has(tag.tagId)||
-     (tag.functionCode!==3&&tag.functionCode!==4)||
-     !Number.isInteger(tag.address)||tag.address<0||tag.address>65535)
-     throw Error('Invalid or duplicated Modbus register mapping');
-   seen.add(tag.tagId);
- }
- return {...config,pollMs,requestTimeoutMs,reconnectMaxMs};
-}
-/** Coalesce contiguous addresses into at most 32-register FC03/04 reads. */
-export function planReads(tags:readonly RegisterTag[]):readonly ReadGroup[] {
- const ordered=[...tags].sort((a,b)=>a.functionCode-b.functionCode||a.address-b.address);
- const result:ReadGroup[]=[];
- let entries:RegisterTag[]=[],start=0,last=-1,fn:3|4=3;
- const flush=()=>{
-  if(entries.length)result.push({functionCode:fn,start,count:last-start+1,tags:entries});
-  entries=[];
- };
- for(const tag of ordered){
-  if(!entries.length){start=tag.address;last=tag.address;fn=tag.functionCode;}
-  else if(tag.functionCode!==fn||tag.address>last+1||
-    tag.address-start>=MAX_READ){
-    flush();start=tag.address;last=tag.address;fn=tag.functionCode;
-  }else last=Math.max(last,tag.address);
-  entries.push(tag);
- }
- flush();
- return result;
-}
+const MAX_FRAME=260;
 interface Pending {
  readonly transactionId:number;
- readonly functionCode:3|4;
+ readonly functionCode:ReadFunction;
  readonly count:number;
  readonly resolve:(data:Buffer)=>void;
  readonly reject:(error:Error)=>void;
@@ -152,8 +89,10 @@ export class ModbusTcpReadAdapter implements ReadOnlyAdapter {
   if(fn===(pending.functionCode|0x80)){
    pending.reject(new Error('Modbus exception '+String(frame[8])));return;
   }
-  if(fn!==pending.functionCode||frame[8]!==pending.count*2||
-    frame.length!==9+pending.count*2){
+  const expected=pending.functionCode<=2?
+    Math.ceil(pending.count/8):pending.count*2;
+  if(fn!==pending.functionCode||frame[8]!==expected||
+    frame.length!==9+expected){
    pending.reject(new Error('Invalid Modbus response payload'));return;
   }
   pending.resolve(frame.subarray(9));
@@ -220,8 +159,7 @@ export class ModbusTcpReadAdapter implements ReadOnlyAdapter {
      const bytes=await this.read(read);
      if(!this.running)break;
      for(const tag of read.tags){
-      const offset=(tag.address-read.start)*2;
-      const value=bytes.readUInt16BE(offset);
+      const value=decodeTag(read,bytes,tag);
       this.emit({tagId:tag.tagId,value,quality:'GOOD',sequence:++this.sequence});
      }
     }

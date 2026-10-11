@@ -36,3 +36,16 @@ Original SVG files and required attribution are in
 FUXA source code or editor JavaScript has not been copied. A larger
 SVG library, authored state-driven animation and equipment-specific
 HMI templates are subsequent milestones.
+
+
+## Read-only Modbus lab mapping (CP-09)
+
+The Node tag server now supports read-only Modbus **FC01/FC02/FC03/FC04**
+with bool, signed 16-bit, signed/unsigned 32-bit and float32 mappings,
+including configurable 32-bit word order. See
+[docs/architecture/CP09.md](docs/architecture/CP09.md) and
+[config/modbus-lab.example.json](config/modbus-lab.example.json).
+
+To validate your mapping **without opening a Modbus connection**, run
+\`npm run check:modbus -- modbus-lab.example.json\`. The default demo
+server and all existing graphical editor workflows remain unchanged.
