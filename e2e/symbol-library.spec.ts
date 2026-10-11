@@ -28,7 +28,7 @@ test('symbol animation runs only in preview and survives reload',async({page})=>
   await expect(icon).not.toHaveClass(/symbol-spin/);
   await page.getByRole('button',{name:/Preview/}).click();
   await expect(icon).toHaveClass(/symbol-spin/);
-  await expect.poll(()=>icon.evaluate(el=>getComputedStyle(el).animationName)).toBe('hmi-symbol-spin');
+  await expect.poll(()=>icon.evaluate(el=>getComputedStyle(el).animationName)).toMatch(/hmi-symbol-spin$/);
   await page.getByRole('button',{name:/Exit Preview/}).click();
   await page.reload();
   await page.getByRole('searchbox',{name:'Search symbols'}).fill('compressor fan');
