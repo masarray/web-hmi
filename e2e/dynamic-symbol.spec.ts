@@ -21,11 +21,16 @@ test('CB rotating responds to IEC double-point with distinct visual states and s
 
 test('custom vector symbol composes, is reusable, and travels with project JSON',async({page})=>{
   await page.goto('/');
-  const lines=page.getByRole('button',{name:/Line/}).filter({hasText:'Line'});
-  await lines.first().click();
-  await lines.first().click();
-  const layerButtons=page.locator('.layers button');
-  await layerButtons.nth(-2).click({modifiers:['Shift']});
+  const addLine=page.locator('.palette button').filter({hasText:'Line'});
+  await expect(addLine).toHaveCount(1);
+  await addLine.click();
+  await addLine.click();
+  await expect(page.locator('g.canvas-node')).toHaveCount(13);
+  const lineLayers=page.locator('.layers button').filter({hasText:'Line'});
+  await expect(lineLayers).toHaveCount(2);
+  await lineLayers.first().click();
+  await lineLayers.last().click({modifiers:['Shift']});
+  await expect(page.getByText('2 objects selected.')).toBeVisible();
   await page.getByRole('button',{name:'Create Dynamic Symbol from Lines'}).click();
   await expect(page.getByTestId('symbol-builder')).toBeVisible();
   await page.getByRole('textbox',{name:'Dynamic symbol name'}).fill('Bay Custom CB');
