@@ -7,12 +7,6 @@ export interface HmiSymbol {
 }
 export const HMI_SYMBOLS:readonly HmiSymbol[]=[
   {
-    "id": "cb-rotating",
-    "label": "CB Rotating (SP / DP)",
-    "category": "Electrical",
-    "href": "assets/custom/cb-rotating.svg"
-  },
-  {
     "id": "feeder",
     "label": "Feeder",
     "category": "Electrical",
