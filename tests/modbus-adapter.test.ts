@@ -124,6 +124,12 @@ test('FC03+FC04 read coalescing and split TCP responses preserve value mapping',
    {fn:3,start:0,count:2},{fn:4,start:5,count:1}
   ]);
   assert.ok(health.includes('HEALTHY'));
+  const stats=adapter.diagnostics();
+  assert.ok(stats.successfulReads>=2);
+  assert.ok(stats.completedCycles>=1);
+  assert.ok((stats.lastSuccessAt??0)>0);
+  assert.equal(stats.lastError,null);
+  assert.ok(stats.lastCycleMs!==null);
  }finally{await adapter.stop();await server.stop();}
  assert.equal(adapter.status(),'DISCONNECTED');
 });
@@ -137,11 +143,17 @@ test('timeout BAD, bounded reconnect and fresh GOOD recovery without restarting 
   adapter.start();
   await wait(()=>transitions.includes('DEGRADED'));
   assert.ok(messages.some(s=>s.quality==='BAD'&&s.value===null));
+  assert.ok((adapter.diagnostics().lastFailureAt??0)>0);
+  assert.ok(adapter.diagnostics().consecutiveFailures>=1);
+  assert.match(adapter.diagnostics().lastError??'',/timeout/i);
   const maxSequence=Math.max(...messages.map(s=>s.sequence));
   server.fault='healthy';
   await wait(()=>adapter.status()==='HEALTHY'&&messages.some(s=>
    s.quality==='GOOD'&&s.sequence>maxSequence));
   assert.ok(messages.some(s=>s.quality==='GOOD'&&s.tagId==='Plant/Motor'));
+  assert.equal(adapter.diagnostics().consecutiveFailures,0);
+  assert.equal(adapter.diagnostics().lastError,null);
+  assert.ok(adapter.diagnostics().completedCycles>=1);
  }finally{await adapter.stop();await server.stop();}
 });
 test('Modbus exception is BAD; disconnect/stop cancels in-flight IO',async()=>{

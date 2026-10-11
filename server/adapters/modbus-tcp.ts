@@ -10,10 +10,20 @@ export {validateModbusConfig,planReads} from './modbus-codec.ts';
 export type {RegisterTag,ModbusConfig,ReadGroup,DataType,WordOrder} from './modbus-codec.ts';
 
 export type AdapterHealth='DISCONNECTED'|'CONNECTING'|'HEALTHY'|'DEGRADED';
+export interface AdapterDiagnostics {
+ readonly successfulReads:number;
+ readonly completedCycles:number;
+ readonly consecutiveFailures:number;
+ readonly lastSuccessAt:number|null;
+ readonly lastFailureAt:number|null;
+ readonly lastError:string|null;
+ readonly lastCycleMs:number|null;
+}
 export interface ReadOnlyAdapter {
  start():void;
  stop():Promise<void>;
  status():AdapterHealth;
+ diagnostics?():AdapterDiagnostics;
 }
 export type SampleSink=(sample:WireSample)=>void;
 export type HealthSink=(state:AdapterHealth)=>void;
@@ -37,6 +47,12 @@ export class ModbusTcpReadAdapter implements ReadOnlyAdapter {
  private transaction=0;
  private sequence=0;
  private failures=0;
+ private successfulReads=0;
+ private completedCycles=0;
+ private lastSuccessAt:number|null=null;
+ private lastFailureAt:number|null=null;
+ private lastError:string|null=null;
+ private lastCycleMs:number|null=null;
  private delay:ReturnType<typeof setTimeout>|null=null;
  private waitDone:(()=>void)|null=null;
  private loop:Promise<void>|null=null;
@@ -49,6 +65,12 @@ export class ModbusTcpReadAdapter implements ReadOnlyAdapter {
   this.health=health;
  }
  status():AdapterHealth{return this.state;}
+ diagnostics():AdapterDiagnostics{
+  return {successfulReads:this.successfulReads,completedCycles:this.completedCycles,
+   consecutiveFailures:this.failures,lastSuccessAt:this.lastSuccessAt,
+   lastFailureAt:this.lastFailureAt,lastError:this.lastError,
+   lastCycleMs:this.lastCycleMs};
+ }
  private setState(state:AdapterHealth):void {
   if(this.state===state)return;
   this.state=state;this.health(state);
@@ -153,23 +175,33 @@ export class ModbusTcpReadAdapter implements ReadOnlyAdapter {
  private async pollLoop():Promise<void>{
   while(this.running){
    try{
+    const cycleStart=Date.now();
     await this.connect();
     for(const read of this.reads){
      if(!this.running)break;
      const bytes=await this.read(read);
      if(!this.running)break;
+     this.successfulReads++;
+     this.lastSuccessAt=Date.now();
      for(const tag of read.tags){
       const value=decodeTag(read,bytes,tag);
       this.emit({tagId:tag.tagId,value,quality:'GOOD',sequence:++this.sequence});
      }
     }
     if(!this.running)break;
-    this.failures=0;this.setState('HEALTHY');
+    this.failures=0;
+    this.completedCycles++;
+    this.lastCycleMs=Date.now()-cycleStart;
+    this.lastError=null;
+    this.setState('HEALTHY');
     await this.sleep(this.config.pollMs);
-   }catch{
+   }catch(error){
     this.disconnect();
     if(!this.running)break;
     this.failures++;
+    this.lastFailureAt=Date.now();
+    const detail=error instanceof Error?error.message:'Unknown PLC communication failure';
+    this.lastError=detail.slice(0,140);
     this.setState('DEGRADED');
     this.emitUnavailable();
     const backoff=Math.min(this.config.reconnectMaxMs,

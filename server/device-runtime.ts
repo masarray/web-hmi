@@ -2,9 +2,9 @@
  * CP-11: single server-owned source, staged health verification, atomic revision
  * transitions. The browser cannot construct device sockets or issue Modbus writes.
  */
-import {ModbusTcpReadAdapter,type AdapterHealth,type ReadOnlyAdapter}
+import {ModbusTcpReadAdapter,type AdapterHealth,type AdapterDiagnostics,type ReadOnlyAdapter}
  from './adapters/modbus-tcp.ts';
-import {validateModbusConfig,type ModbusConfig} from '../src/shared/modbus-mapping.ts';
+import {validateModbusConfig,planReads,type ModbusConfig} from '../src/shared/modbus-mapping.ts';
 import type {TagHub} from './tag-hub.ts';
 
 export type AdapterFactory=(config:ModbusConfig,
@@ -16,6 +16,14 @@ export interface DeviceState {
  readonly configured:boolean;
  readonly config:Required<ModbusConfig>|null;
  readonly busy:boolean;
+ readonly diagnostics:AdapterDiagnostics|null;
+}
+export interface DeviceTestResult {
+ readonly ok:true;
+ readonly latencyMs:number;
+ readonly readRequests:number;
+ readonly host:string;
+ readonly unitId:number;
 }
 export class DeviceRuntime {
  private current:ReadOnlyAdapter|null=null;
@@ -35,7 +43,8 @@ export class DeviceRuntime {
  }
  snapshot():DeviceState{
   return {revision:this.revision,health:this.health,
-    configured:this.config!==null,config:this.config,busy:this.busy};
+    configured:this.config!==null,config:this.config,busy:this.busy,
+    diagnostics:this.current?.diagnostics?.()??null};
  }
  /** Existing startup source follows the same revision/sequence rules. */
  startInitial(config:ModbusConfig):void{
@@ -75,6 +84,20 @@ export class DeviceRuntime {
   }finally{
    await adapter.stop();
   }
+ }
+ /** Read-only connection test. Never changes or persists the active source. */
+ async testConnection(input:ModbusConfig):Promise<DeviceTestResult>{
+  if(this.closed)throw Error('Device runtime stopped');
+  if(this.busy)throw Error('Another device operation is in progress');
+  const safe=validateModbusConfig(input);
+  this.busy=true;
+  try{
+   const start=Date.now();
+   await this.probe(safe,Math.min(12000,Math.max(1500,
+    safe.requestTimeoutMs*(2+safe.tags.length))));
+   return {ok:true,latencyMs:Date.now()-start,
+    readRequests:planReads(safe.tags).length,host:safe.host,unitId:safe.unitId};
+  }finally{this.busy=false;}
  }
  async apply(input:ModbusConfig,expectedRevision:number):Promise<DeviceState>{
   if(this.closed)throw Error('Device runtime stopped');

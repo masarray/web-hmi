@@ -145,3 +145,44 @@ test('oversized body and invalid/no write mapping cannot change active source',a
   assert.equal(s.runtime.snapshot().revision,0);
  }finally{await s.close();}
 });
+
+test('Test PLC uses one read-only candidate and does not change active source or revision',async()=>{
+ const counters={started:0,stopped:0};
+ const s=await server(fakeAdapter(()=>true,counters));
+ try{
+  s.runtime.startInitial(CONFIG);
+  const prior=s.runtime.snapshot();
+  const result=await call(s.url,'/api/device/test',{token:TOKEN,method:'POST',
+   json:{config:{...CONFIG,port:5502}}});
+  assert.equal(result.status,200);
+  const body=await result.json();
+  assert.equal(body.ok,true);
+  assert.equal(body.host,'127.0.0.1');
+  assert.equal(body.readRequests,1);
+  assert.ok(body.latencyMs>=0);
+  assert.equal(s.runtime.snapshot().revision,prior.revision);
+  assert.equal(s.runtime.snapshot().health,'HEALTHY');
+  assert.deepEqual(s.runtime.snapshot().config,prior.config);
+  assert.equal(counters.started,2);
+  assert.equal(counters.stopped,1); // probe stopped, current still running
+ }finally{await s.close();}
+});
+test('Failed Test PLC leaves current source running and never persists changes',async()=>{
+ const counters={started:0,stopped:0};
+ let saves=0;
+ const s=await server(fakeAdapter(c=>c.port!==5544,counters),()=>{saves++;});
+ try{
+  s.runtime.startInitial(CONFIG);
+  const fail=await call(s.url,'/api/device/test',{token:TOKEN,method:'POST',
+   json:{config:{...CONFIG,port:5544}}});
+  assert.equal(fail.status,400);
+  assert.equal(s.runtime.snapshot().health,'HEALTHY');
+  assert.equal(s.runtime.snapshot().revision,0);
+  assert.equal(saves,0);
+  assert.equal(counters.stopped,1);
+  assert.equal((await call(s.url,'/api/device/test',{method:'POST',
+    json:{config:CONFIG}})).status,401);
+  assert.equal((await call(s.url,'/api/device/test',{token:TOKEN,method:'POST',
+    origin:'https://outsider.example',json:{config:CONFIG}})).status,403);
+ }finally{await s.close();}
+});

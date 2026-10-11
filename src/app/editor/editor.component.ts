@@ -19,6 +19,11 @@ const MODBUS_KEY='web-hmi.modbus-map.v1';
 const MAX_MAPPING_BYTES=131072;
 type MappingField='tagId'|'functionCode'|'address'|'dataType'|'wordOrder';
 type DeviceField='host'|'port'|'unitId'|'pollMs'|'requestTimeoutMs';
+interface DeviceDiagnosticsView {
+ successfulReads:number;completedCycles:number;consecutiveFailures:number;
+ lastSuccessAt:number|null;lastFailureAt:number|null;
+ lastError:string|null;lastCycleMs:number|null;
+}
 const REGISTER_TYPES:readonly DataType[]=['uint16','int16','uint32','int32','float32'];
 function defaultMapping():ModbusConfig {
  return {host:'127.0.0.1',port:502,unitId:1,pollMs:1000,
@@ -108,6 +113,15 @@ export class EditorComponent implements OnDestroy {
   readonly deviceHealth=signal('NOT CONNECTED');
   readonly deviceBusy=signal(false);
   readonly deviceConfigured=signal(false);
+  readonly deviceDiagnostics=signal<DeviceDiagnosticsView|null>(null);
+  readonly deviceProbeStatus=signal('');
+  readonly deviceHealthLabel=computed(()=>{
+    const health=this.deviceHealth();
+    return health==='HEALTHY'?'Online':health==='CONNECTING'?'Connecting':
+      health==='DEGRADED'?'Connection problem':
+      health==='DISCONNECTED'?'Offline':
+      health==='UNCONFIGURED'?'Not configured':'Not connected';
+  });
   readonly mappingTypes=REGISTER_TYPES;
   readonly mappingValidation=computed(()=>{
     try{
@@ -144,6 +158,7 @@ export class EditorComponent implements OnDestroy {
   toggleMapping():void{
     if(this.previewMode())return;
     this.mappingOpen.update(open=>!open);
+    if(!this.mappingOpen())this.stopDeviceMonitor();
   }
   showMoreMappings():void{
     this.mappingLimit.update(v=>Math.min(v+40,this.mappingDraft().tags.length));
@@ -214,19 +229,54 @@ export class EditorComponent implements OnDestroy {
       this.status.set('Bound '+selected.name+' to '+id);
     }catch(error){this.status.set(String(error));}
   }
+  deviceClock(timestamp:number):string{
+    return Number.isFinite(timestamp)&&timestamp>0?
+      new Date(timestamp).toLocaleTimeString():'—';
+  }
+  private deviceMonitor:ReturnType<typeof setInterval>|null=null;
+  private stopDeviceMonitor():void{
+    if(this.deviceMonitor!==null)clearInterval(this.deviceMonitor);
+    this.deviceMonitor=null;
+  }
+  private startDeviceMonitor():void{
+    if(this.deviceMonitor!==null)return;
+    this.deviceMonitor=setInterval(()=>{
+      if(this.mappingOpen()&&this.adminToken().length>=32&&!this.deviceBusy())
+        void this.refreshDeviceMonitor();
+    },4000);
+  }
+  private updateDeviceState(state:{revision:number;health:string;configured:boolean;
+    diagnostics?:DeviceDiagnosticsView|null}):void{
+    this.deviceRevision.set(state.revision);
+    this.deviceHealth.set(state.health);
+    this.deviceConfigured.set(state.configured);
+    this.deviceDiagnostics.set(state.diagnostics??null);
+  }
+  private async refreshDeviceMonitor():Promise<void>{
+    try{this.updateDeviceState(await this.deviceRequest('status'));}
+    catch{
+      this.deviceRevision.set(null);
+      this.deviceHealth.set('DISCONNECTED');
+      this.deviceDiagnostics.set(null);
+    }
+  }
   setAdminToken(event:Event):void{
+    this.stopDeviceMonitor();
     this.adminToken.set((event.target as HTMLInputElement).value);
     this.deviceRevision.set(null);
     this.deviceHealth.set('NOT CONNECTED');
+    this.deviceDiagnostics.set(null);
+    this.deviceProbeStatus.set('');
   }
-  private deviceApiUrl(path:'status'|'apply'):string{
+  private deviceApiUrl(path:'status'|'apply'|'test'):string{
     // Dev serves Angular on :4200; production should proxy /api/device on the
     // same TLS origin as the HMI frontend, never to an arbitrary device host.
     const port=location.port==='4200'?':8787':'';
     return location.protocol+'//'+location.hostname+port+'/api/device/'+path;
   }
   private async deviceRequest(path:'status'|'apply',body?:unknown):Promise<{
-    revision:number;health:string;configured:boolean
+    revision:number;health:string;configured:boolean;
+    diagnostics?:DeviceDiagnosticsView|null
   }>{
     if(this.adminToken().length<32)throw Error('Enter an administrator token (32+ characters)');
     const response=await fetch(this.deviceApiUrl(path),{
@@ -237,26 +287,53 @@ export class EditorComponent implements OnDestroy {
       ...(body===undefined?{}:{body:JSON.stringify(body)})
     });
     const result=await response.json() as {
-      revision?:number;health?:string;configured?:boolean;error?:string
+      revision?:number;health?:string;configured?:boolean;error?:string;
+      diagnostics?:DeviceDiagnosticsView|null
     };
     if(!response.ok)throw Error(result.error??('Server HTTP '+response.status));
     if(!Number.isSafeInteger(result.revision)||typeof result.health!=='string'||
       typeof result.configured!=='boolean')throw Error('Invalid server response');
     return {revision:result.revision!,health:result.health,
-      configured:result.configured};
+      configured:result.configured,diagnostics:result.diagnostics};
   }
   async checkDeviceStatus():Promise<void>{
     if(this.deviceBusy())return;
     this.deviceBusy.set(true);
     try{
       const state=await this.deviceRequest('status');
-      this.deviceRevision.set(state.revision);
-      this.deviceHealth.set(state.health);
-      this.deviceConfigured.set(state.configured);
-      this.mappingStatus.set('Connected to configuration server · revision '+state.revision);
+      this.updateDeviceState(state);
+      this.startDeviceMonitor();
+      this.mappingStatus.set('Server connected');
     }catch(error){
       this.mappingStatus.set('Server status failed: '+String(error));
       this.deviceRevision.set(null);
+      this.deviceHealth.set('DISCONNECTED');
+      this.deviceDiagnostics.set(null);
+      this.stopDeviceMonitor();
+    }finally{this.deviceBusy.set(false);}
+  }
+  /** A full read-only test without replacing the running PLC source. */
+  async testDeviceConnection():Promise<void>{
+    if(this.deviceBusy()||!this.mappingValidation().ok||this.adminToken().length<32)return;
+    this.deviceBusy.set(true);
+    this.deviceProbeStatus.set('Testing PLC connection…');
+    try{
+      const response=await fetch(this.deviceApiUrl('test'),{
+        method:'POST',mode:'cors',credentials:'omit',
+        signal:AbortSignal.timeout(30000),
+        headers:{Authorization:'Bearer '+this.adminToken(),'Content-Type':'application/json'},
+        body:JSON.stringify({config:validateModbusConfig(this.mappingDraft())})
+      });
+      const result=await response.json() as {
+        ok?:boolean;latencyMs?:number;readRequests?:number;error?:string
+      };
+      if(!response.ok||!result.ok||!Number.isFinite(result.latencyMs))
+        throw Error(result.error??'PLC test failed');
+      this.deviceProbeStatus.set('PLC responding · '+result.latencyMs+
+        ' ms · '+result.readRequests+' read requests');
+    }catch(error){
+      this.deviceProbeStatus.set('PLC test failed · '+
+        (error instanceof Error?error.message:String(error)));
     }finally{this.deviceBusy.set(false);}
   }
   async applyDeviceMapping():Promise<void>{
@@ -267,14 +344,13 @@ export class EditorComponent implements OnDestroy {
       const state=await this.deviceRequest('apply',{
         revision:this.deviceRevision(),config:validateModbusConfig(this.mappingDraft())
       });
-      this.deviceRevision.set(state.revision);
-      this.deviceHealth.set(state.health);
-      this.deviceConfigured.set(state.configured);
+      this.updateDeviceState(state);
       this.mappingStatus.set('Configuration applied · revision '+state.revision+
         ' · source '+state.health);
     }catch(error){
       this.mappingStatus.set('Apply failed; previous source retained: '+String(error));
       this.deviceRevision.set(null); // explicit reconnect prevents blind retries
+      this.stopDeviceMonitor();
     }finally{this.deviceBusy.set(false);}
   }
   exportMapping():void{
@@ -332,6 +408,7 @@ export class EditorComponent implements OnDestroy {
     else this.tagStream.stop();
   });
   ngOnDestroy():void{
+    this.stopDeviceMonitor();
     this.tagStream.stop();
     this.cancelFreshnessTimer();
   }

@@ -137,13 +137,36 @@
             </label>
             <button type="button" [disabled]="deviceBusy()||adminToken().length<32"
               (click)="checkDeviceStatus()">Check server</button>
+            <button type="button" [disabled]="deviceBusy()||!mappingValidation().ok||adminToken().length<32"
+              (click)="testDeviceConnection()">Test PLC</button>
             <button type="button" class="mapping-apply"
               [disabled]="deviceBusy()||!mappingValidation().ok||deviceRevision()===null"
               (click)="applyDeviceMapping()">Apply to server</button>
-            <span data-testid="device-runtime-health">Server: {{deviceHealth()}}
+            <span data-testid="device-runtime-health" [attr.data-health]="deviceHealth()">
+              {{deviceHealthLabel()}}
               @if(deviceRevision()!==null){· Revision {{deviceRevision()}}}
             </span>
           </div>
+          @if(deviceProbeStatus()){
+            <p class="device-probe" role="status" data-testid="device-probe">
+              {{deviceProbeStatus()}}
+            </p>
+          }
+          @if(deviceDiagnostics();as d){
+            <div class="device-diagnostics" data-testid="device-diagnostics">
+              <span><b>{{d.completedCycles}}</b> successful cycles</span>
+              <span><b>{{d.successfulReads}}</b> register reads</span>
+              <span>Last read:
+                <b>{{d.lastSuccessAt?deviceClock(d.lastSuccessAt):'—'}}</b>
+              </span>
+              <span>Cycle: <b>{{d.lastCycleMs===null?'—':d.lastCycleMs+' ms'}}</b></span>
+              @if(d.lastError){
+                <span class="device-error" title="Last communication error">
+                  {{d.lastError}}
+                </span>
+              }
+            </div>
+          }
           <div class="mapping-table-wrap">
             <table class="mapping-table" aria-label="Modbus register mappings">
               <thead><tr><th>Tag ID</th><th>Memory</th><th>0-based address</th>
