@@ -141,7 +141,7 @@ export class AlarmEngine {
  snapshot():AlarmSnapshot {
   const active:AlarmState[]=[...this.states.values()]
    .filter(s=>s.active||!s.qualityOk)
-   .map(s=>({
+   .map((s):AlarmState=>({
     id:s.rule.id,label:s.rule.label,tagId:s.rule.tagId,
     severity:s.rule.severity,phase:!s.qualityOk?'UNKNOWN':s.active?'ACTIVE':'NORMAL',
     acknowledged:s.acknowledged,since:s.since,lastValue:s.lastValue
