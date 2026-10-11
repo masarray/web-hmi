@@ -2,9 +2,11 @@ import { ChangeDetectionStrategy, Component, ElementRef, HostListener,
   ViewChild, computed, signal } from '@angular/core';
 import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
   newShape, insertShape, editShape, deleteShape, createPage } from './document';
+import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } from './actions';
 
 const STORAGE_KEY='web-hmi.project.v1';
-type Drag={id:string;pointerId:number;startX:number;startY:number;baseX:number;baseY:number};
+type Drag={id:string;pointerId:number;startX:number;startY:number;original:Shape;mode:'move'|'resize'};
+type DragPreview={id:string;x:number;y:number;width:number;height:number};
 
 @Component({
   selector:'hmi-root', standalone:true, imports:[],
@@ -27,7 +29,7 @@ export class EditorComponent {
     this.project().pages.find(p=>p.id===this.project().activePageId)!);
   readonly selected=computed(()=>
     this.activePage().shapes.find(s=>s.id===this.selectedId())??null);
-  readonly preview=signal<{id:string;x:number;y:number}|null>(null);
+  readonly preview=signal<DragPreview|null>(null);
   readonly palette:{kind:ShapeKind;label:string;glyph:string}[]=[
     {kind:'rect',label:'Rectangle',glyph:'▭'},
     {kind:'ellipse',label:'Ellipse',glyph:'◯'},
@@ -88,6 +90,67 @@ export class EditorComponent {
       this.selectedId.set(shape.id);
     } catch(error) { this.status.set(String(error)); }
   }
+
+  /** Quick actions keep the operator flow in one workspace. */
+  duplicateSelected():void {
+    const id=this.selectedId();
+    if(!id || this.previewMode()) return;
+    try {
+      const next=duplicateShape(this.project(),id);
+      this.record(next.project);
+      this.selectedId.set(next.newId);
+      this.status.set('Object duplicated · click to move it');
+    } catch(error) { this.status.set(String(error)); }
+  }
+  layerOrder(direction:'front'|'back'):void {
+    const id=this.selectedId();
+    if(!id || this.previewMode()) return;
+    this.record(reorderShape(this.project(),id,direction));
+  }
+  updateProjectName(event:Event):void {
+    const input=event.target as HTMLInputElement;
+    try{this.record(renameProject(this.project(),input.value));}
+    catch(error){this.status.set(String(error));input.value=this.project().name;}
+  }
+  updatePageName(event:Event):void {
+    const input=event.target as HTMLInputElement;
+    try{this.record(renamePage(this.project(),this.project().activePageId,input.value));}
+    catch(error){this.status.set(String(error));input.value=this.activePage().name;}
+  }
+  removePage():void {
+    try{
+      this.record(deletePage(this.project(),this.project().activePageId));
+      this.selectedId.set(null);
+      this.status.set('Page removed · Undo can restore it');
+    }catch(error){this.status.set(String(error));}
+  }
+  startPaletteDrag(event:DragEvent,kind:ShapeKind):void {
+    event.dataTransfer?.setData('application/x-web-hmi-shape',kind);
+    if(event.dataTransfer) event.dataTransfer.effectAllowed='copy';
+  }
+  allowPaletteDrop(event:DragEvent):void {
+    if(event.dataTransfer?.types.includes('application/x-web-hmi-shape')){
+      event.preventDefault();
+      event.dataTransfer.dropEffect='copy';
+    }
+  }
+  dropPaletteShape(event:DragEvent):void {
+    const kind=event.dataTransfer?.getData('application/x-web-hmi-shape');
+    if(!kind || !this.palette.some(tool=>tool.kind===kind) || this.previewMode())return;
+    event.preventDefault();
+    const point=this.pointerToCanvas(event);
+    if(!point)return;
+    const shape=newShape(kind as ShapeKind,this.activePage().shapes.length);
+    const placed={...shape,
+      x:this.round(Math.max(0,Math.min(1200-shape.width,point.x-shape.width/2))),
+      y:this.round(Math.max(0,Math.min(700-shape.height,point.y-shape.height/2)))};
+    try{
+      this.record(insertShape(this.project(),placed));
+      this.selectedId.set(shape.id);
+      this.status.set('Object placed · drag to reposition or edit properties');
+    }catch(error){this.status.set(String(error));}
+  }
+
   removeSelected():void {
     const id=this.selectedId();
     if (!id) return;
@@ -119,10 +182,18 @@ export class EditorComponent {
     const p=this.preview();
     return p?.id===s.id?p.y:s.y;
   }
+  displayWidth(s:Shape):number {
+    const p=this.preview();
+    return p?.id===s.id?p.width:s.width;
+  }
+  displayHeight(s:Shape):number {
+    const p=this.preview();
+    return p?.id===s.id?p.height:s.height;
+  }
   onCanvasDown():void {
     if (!this.previewMode()) this.selectedId.set(null);
   }
-  private pointerToCanvas(e:PointerEvent):{x:number;y:number}|null {
+  private pointerToCanvas(e:Pick<PointerEvent,'clientX'|'clientY'>):{x:number;y:number}|null {
     const svg=this.viewport?.nativeElement;
     const ctm=svg?.getScreenCTM();
     if (!ctm) return null;
@@ -136,7 +207,17 @@ export class EditorComponent {
     const point=this.pointerToCanvas(e);
     if (!point) return;
     this.drag={id:s.id,pointerId:e.pointerId,startX:point.x,startY:point.y,
-      baseX:s.x,baseY:s.y};
+      original:s,mode:'move'};
+    this.viewport?.nativeElement.setPointerCapture(e.pointerId);
+  }
+  beginResize(e:PointerEvent,s:Shape):void {
+    if(e.button!==0 || this.previewMode() || s.kind==='text')return;
+    e.stopPropagation();
+    this.selectedId.set(s.id);
+    const p=this.pointerToCanvas(e);
+    if(!p)return;
+    this.drag={id:s.id,pointerId:e.pointerId,startX:p.x,startY:p.y,
+      original:s,mode:'resize'};
     this.viewport?.nativeElement.setPointerCapture(e.pointerId);
   }
   movePointer(e:PointerEvent):void {
@@ -144,8 +225,17 @@ export class EditorComponent {
     if (!d || d.pointerId!==e.pointerId) return;
     const p=this.pointerToCanvas(e);
     if (!p) return;
-    this.preview.set({id:d.id,x:this.round(d.baseX+p.x-d.startX),
-      y:this.round(d.baseY+p.y-d.startY)});
+    const dx=p.x-d.startX,dy=p.y-d.startY;
+    if(d.mode==='resize'){
+      this.preview.set({id:d.id,x:d.original.x,y:d.original.y,
+        width:Math.max(1,Math.min(10000,this.round(d.original.width+dx))),
+        height:Math.max(1,Math.min(10000,this.round(d.original.height+dy)))});
+    }else{
+      this.preview.set({id:d.id,
+        x:Math.min(10000,Math.max(-10000,this.round(d.original.x+dx))),
+        y:Math.min(10000,Math.max(-10000,this.round(d.original.y+dy))),
+        width:d.original.width,height:d.original.height});
+    }
   }
   endPointer(e:PointerEvent):void {
     const d=this.drag;
@@ -156,9 +246,19 @@ export class EditorComponent {
     const svg=this.viewport?.nativeElement;
     if (svg?.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
     if (preview && preview.id===d.id) {
-      try { this.record(editShape(this.project(),d.id,{x:preview.x,y:preview.y})); }
+      const change:ShapeEdit=d.mode==='resize'
+        ?{width:preview.width,height:preview.height}
+        :{x:preview.x,y:preview.y};
+      try { this.record(editShape(this.project(),d.id,change)); }
       catch(error) { this.status.set(String(error)); }
     }
+  }
+  cancelPointer(e:PointerEvent):void {
+    if(!this.drag || this.drag.pointerId!==e.pointerId)return;
+    this.drag=null;
+    this.preview.set(null);
+    const svg=this.viewport?.nativeElement;
+    if(svg?.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
   }
   private round(n:number):number {
     return this.snapEnabled()?Math.round(n/10)*10:Math.round(n);
@@ -198,6 +298,10 @@ export class EditorComponent {
     const node=e.target as HTMLElement|null;
     if (node?.closest('input,textarea,[contenteditable="true"]')) return;
     const modifier=e.ctrlKey||e.metaKey;
+    if(e.key==='Escape'){this.selectedId.set(null);return;}
+    if(modifier && e.key.toLowerCase()==='d' && this.selectedId() && !this.previewMode()){
+      e.preventDefault();this.duplicateSelected();return;
+    }
     if (modifier && e.key.toLowerCase()==='z') {
       e.preventDefault();e.shiftKey?this.redo():this.undo();return;
     }

@@ -6,6 +6,9 @@
       <button type="button" (click)="undo()" [disabled]="!canUndo()" title="Undo (Ctrl+Z)">↶ Undo</button>
       <button type="button" (click)="redo()" [disabled]="!canRedo()" title="Redo (Ctrl+Y)">↷ Redo</button>
       <span class="separator"></span>
+      @if(selected() && !previewMode()){
+        <button type="button" (click)="duplicateSelected()" title="Duplicate selected object (Ctrl+D)">⧉ Duplicate</button>
+      }
       <button type="button" (click)="exportProject()">⇩ Export</button>
       <label class="file-label">⇧ Import <input type="file" accept="application/json,.json" (change)="importProject($event)" hidden></label>
       <button type="button" class="primary" (click)="togglePreview()">{{previewMode()?'Exit Preview':'▶ Preview'}}</button>
@@ -22,14 +25,16 @@
           </button>
         }
       </div>
-      <div class="pane-heading with-line">SHAPE LIBRARY</div>
+      <div class="pane-heading with-line">ADD OBJECTS <span class="muted">click or drag</span></div>
       <div class="palette">
         @for(tool of palette;track tool.kind){
-          <button type="button" (click)="add(tool.kind)" [title]="'Add '+tool.label">
+          <button type="button" draggable="true" (dragstart)="startPaletteDrag($event,tool.kind)"
+            (click)="add(tool.kind)" [title]="'Click to add or drag '+tool.label+' onto canvas'">
             <span class="symbol">{{tool.glyph}}</span><span>{{tool.label}}</span><span class="add-icon">＋</span>
           </button>
         }
       </div>
+      <div class="sidebar-tip">Tip: drag a tool onto the canvas or click to add. Select an object to edit it.</div>
       <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
       <div class="layers">
         @for(shape of activePage().shapes;track shape.id){
@@ -44,7 +49,7 @@
     <main class="center">
       <div class="canvas-toolbar">
         <span class="mode-pill">◇ SVG EDITOR</span>
-        <span class="hint">Select and drag objects · Inspector edits on right</span>
+        <span class="hint">Drag from library to place · select, move and resize on canvas</span>
         <span class="grow"></span>
         <button type="button" [class.on]="gridVisible()" (click)="toggleGrid()">Grid</button>
         <button type="button" [class.on]="snapEnabled()" (click)="toggleSnap()">Snap</button>
@@ -52,13 +57,15 @@
         <button type="button" (click)="zoomBy(-0.1)">−</button>
         <span class="zoom">{{(zoom()*100).toFixed(0)}}%</span>
         <button type="button" (click)="zoomBy(0.1)">＋</button>
+        <button type="button" (click)="zoom.set(1)" title="Reset zoom to 100%">100%</button>
       </div>
       <div class="drawing-area">
         <div class="page-frame">
           <svg #viewport class="viewport" [attr.viewBox]="'0 0 '+(1200/zoom())+' '+(700/zoom())"
             preserveAspectRatio="xMidYMid meet"
             (pointerdown)="onCanvasDown()" (pointermove)="movePointer($event)"
-            (pointerup)="endPointer($event)" (pointercancel)="endPointer($event)">
+            (pointerup)="endPointer($event)" (pointercancel)="cancelPointer($event)"
+            (dragover)="allowPaletteDrop($event)" (drop)="dropPaletteShape($event)">
             <defs>
               <pattern id="canvas-grid" width="20" height="20" patternUnits="userSpaceOnUse">
                 <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#243645" stroke-width=".6"/>
@@ -73,18 +80,18 @@
                 (pointerdown)="beginDrag($event,shape)">
                 @switch(shape.kind){
                   @case('rect'){
-                    <rect x="0" y="0" [attr.width]="shape.width" [attr.height]="shape.height"
+                    <rect x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
                       [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="2"/>
                   }
                   @case('ellipse'){
-                    <ellipse [attr.cx]="shape.width/2" [attr.cy]="shape.height/2"
-                      [attr.rx]="shape.width/2" [attr.ry]="shape.height/2"
+                    <ellipse [attr.cx]="displayWidth(shape)/2" [attr.cy]="displayHeight(shape)/2"
+                      [attr.rx]="displayWidth(shape)/2" [attr.ry]="displayHeight(shape)/2"
                       [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="2"/>
                   }
                   @case('line'){
-                    <line x1="0" y1="0" [attr.x2]="shape.width" [attr.y2]="shape.height"
+                    <line x1="0" y1="0" [attr.x2]="displayWidth(shape)" [attr.y2]="displayHeight(shape)"
                       [attr.stroke]="shape.stroke" stroke-width="4"/>
-                    <line x1="0" y1="0" [attr.x2]="shape.width" [attr.y2]="shape.height"
+                    <line x1="0" y1="0" [attr.x2]="displayWidth(shape)" [attr.y2]="displayHeight(shape)"
                       stroke="transparent" stroke-width="18"/>
                   }
                   @case('text'){
@@ -92,16 +99,23 @@
                       font-family="Segoe UI, Arial, sans-serif">{{shape.text}}</text>
                   }
                   @case('breaker'){
-                    <rect x="0" y="0" [attr.width]="shape.width" [attr.height]="shape.height"
+                    <rect x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
                       [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="3" rx="3"/>
-                    <path [attr.d]="'M 8 10 L '+(shape.width-8)+' '+(shape.height-10)"
+                    <path [attr.d]="'M 8 10 L '+(displayWidth(shape)-8)+' '+(displayHeight(shape)-10)"
                       [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
                   }
                 }
                 @if(selectedId()===shape.id && !previewMode()){
-                  <rect x="-6" y="-6" [attr.width]="shape.width+12" [attr.height]="shape.height+12"
+                  <rect x="-6" y="-6" [attr.width]="displayWidth(shape)+12" [attr.height]="displayHeight(shape)+12"
                     fill="none" stroke="#ffca74" stroke-width="1.8" stroke-dasharray="5 4"
                     pointer-events="none"/>
+                  @if(shape.kind!=='text'){
+                    <circle class="resize-handle" [attr.cx]="displayWidth(shape)" [attr.cy]="displayHeight(shape)"
+                      r="9" fill="#ffce7a" stroke="#24343d" stroke-width="2"
+                      (pointerdown)="beginResize($event,shape)">
+                      <title>Drag to resize {{shape.name}}</title>
+                    </circle>
+                  }
                 }
               </g>
             }
@@ -143,10 +157,29 @@
           <p class="helper">Live tag runtime is not yet implemented.</p>
         </div>
         <div class="inspector-section">
+          <div class="quick-actions">
+            <button type="button" (click)="duplicateSelected()">⧉ Duplicate</button>
+            <button type="button" (click)="layerOrder('front')">Bring to front</button>
+            <button type="button" (click)="layerOrder('back')">Send to back</button>
+          </div>
+          <p class="helper">Tip: Ctrl+D duplicates, Delete removes. Drag the gold corner to resize.</p>
           <button type="button" class="danger" (click)="removeSelected()">Delete selected object</button>
         </div>
       } @else {
-        <div class="empty-inspector"><span>◇</span><p>Select an object on canvas or in Layers to edit properties.</p></div>
+        <div class="inspector-section">
+          <h3>PROJECT SETTINGS</h3>
+          <label>Project name<input aria-label="Project name" type="text" maxlength="120" [value]="project().name" (change)="updateProjectName($event)"></label>
+          <label>Page name<input aria-label="Page name" type="text" maxlength="120" [value]="activePage().name" (change)="updatePageName($event)"></label>
+          @if(project().pages.length>1){
+            <button type="button" class="danger" (click)="removePage()">Delete this page</button>
+          }
+        </div>
+        <div class="empty-inspector">
+          <span>◇</span><p><strong>Get started in 3 steps</strong></p>
+          <p>1. Click an object on the left, or drag it onto your drawing.</p>
+          <p>2. Move and resize on the canvas. Edit its properties here.</p>
+          <p>3. Changes save locally. Export JSON for a portable backup.</p>
+        </div>
       }
     </aside>
   </div>
