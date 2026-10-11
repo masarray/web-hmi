@@ -22,3 +22,11 @@ bundled.
 Only known, same-origin, registry-resolved SVG paths are accepted by project
 documents; no arbitrary SVG markup or remote image URL. Animation is a
 visual preview only, never a representation of live equipment state.
+
+## CP-05 process geometry provenance
+
+Six inline SVG process graphics are transcribed from FUXA's
+`client/src/assets/lib/svgeditor/shapes/proc-shapes.js`, pinned to the
+same upstream revision. The original geometry is MIT-licensed and credited.
+Web HMI adds its own typed geometry registry and rotor animation annotations.
+Source: `src/app/editor/process-graphics.ts`.

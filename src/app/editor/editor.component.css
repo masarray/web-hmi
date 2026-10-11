@@ -125,3 +125,6 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
   .process-graphic.process-pulse,.process-graphic.process-entire-spin,
   .process-graphic .process-rotor{animation:none}
 }
+
+.symbol-more{display:block;margin:0 9px 5px;width:calc(100% - 18px);background:#254559;border:1px solid #43718a;
+  font-size:11px;text-align:center;color:#c1ebfa}

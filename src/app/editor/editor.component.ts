@@ -44,7 +44,9 @@ export class EditorComponent {
   readonly processGraphic=findProcessGraphic;
   readonly processGraphicTotal=PROCESS_GRAPHIC_COUNT;
   readonly symbolMatches=computed(()=>filterSymbols(this.symbolSearch(),this.symbolCategory()));
-  readonly symbolVisible=computed(()=>this.symbolMatches().slice(0,24));
+  readonly symbolLimit=signal(24);
+  readonly symbolVisible=computed(()=>this.symbolMatches().slice(0,this.symbolLimit()));
+  showMoreSymbols():void{this.symbolLimit.update(n=>Math.min(n+24,this.symbolTotal));}
   readonly palette:{kind:ShapeKind;label:string;glyph:string}[]=[
     {kind:'rect',label:'Rectangle',glyph:'▭'},
     {kind:'ellipse',label:'Ellipse',glyph:'◯'},
@@ -211,11 +213,13 @@ export class EditorComponent {
   }
   searchSymbol(event:Event):void{
     this.symbolSearch.set((event.target as HTMLInputElement).value);
+    this.symbolLimit.set(24);
   }
   chooseSymbolCategory(event:Event):void{
     const category=(event.target as HTMLSelectElement).value;
     if(this.symbolCategories.some(item=>item===category))
       this.symbolCategory.set(category as SymbolCategory);
+    this.symbolLimit.set(24);
   }
   addSymbol(symbolId:string):void{
     if(this.previewMode())return;

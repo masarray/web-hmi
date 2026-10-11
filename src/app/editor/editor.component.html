@@ -57,6 +57,11 @@
           <p class="symbol-empty">No symbols match. Try another search or category.</p>
         }
       </div>
+      @if(symbolVisible().length < symbolMatches().length){
+        <button type="button" class="symbol-more" (click)="showMoreSymbols()">
+          Show more symbols ({{symbolMatches().length-symbolVisible().length}} remaining)
+        </button>
+      }
       <div class="symbol-caption">
         {{symbolVisible().length}} of {{symbolMatches().length}} matching SVGs
         · {{processGraphicTotal}} editable vector composites · FUXA/MIT
@@ -240,7 +245,9 @@
         <div class="inspector-section">
           <h3>APPEARANCE</h3>
           <div class="field-grid">
-            <label>Fill<input type="color" [value]="shape.fill" (change)="updateProperty('fill',$event)"></label>
+            @if(shape.kind!=='symbol' || !processGraphic(shape.symbolId)){
+              <label>Fill<input type="color" [value]="shape.fill" (change)="updateProperty('fill',$event)"></label>
+            }
             <label>Stroke<input type="color" [value]="shape.stroke" (change)="updateProperty('stroke',$event)"></label>
           </div>
           @if(shape.kind==='text'){
