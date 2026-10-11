@@ -7,11 +7,12 @@ import type {IncomingMessage,ServerResponse} from 'node:http';
 import {validateModbusConfig,type ModbusConfig} from '../src/shared/modbus-mapping.ts';
 import type {DeviceRuntime} from './device-runtime.ts';
 import type {DeviceFleetRuntime} from './device-fleet-runtime.ts';
+import type {AlarmEngine} from './alarm-engine.ts';
 const MAX_BODY=48*1024;
 const API_PREFIX='/api/device/';
 export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
  token:string;origins:readonly string[]
-},fleet?:DeviceFleetRuntime):(req:IncomingMessage,res:ServerResponse)=>boolean {
+},fleet?:DeviceFleetRuntime,alarms?:AlarmEngine):(req:IncomingMessage,res:ServerResponse)=>boolean {
  if(settings.token.length<32||settings.token.length>1024)
   throw Error('HMI_ADMIN_TOKEN must contain 32–1024 characters');
  const secret=createHash('sha256').update(settings.token).digest();
@@ -31,7 +32,9 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
  return (req,res)=>{
   const isFleet=req.url==='/api/fleet'||req.url==='/api/fleet/apply'||
    req.url==='/api/fleet/test';
-  if(!req.url?.startsWith(API_PREFIX)&&!isFleet)return false;
+  const isAlarm=req.url==='/api/alarms'||req.url==='/api/alarms/config'||
+   req.url==='/api/alarms/ack';
+  if(!req.url?.startsWith(API_PREFIX)&&!isFleet&&!isAlarm)return false;
   const origin=req.headers.origin;
   if(!origin||!origins.has(origin)){
    respond(res,403,{error:'Origin denied'});return true;
@@ -44,6 +47,10 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
   if(!authorized(req)){
    res.setHeader('WWW-Authenticate','Bearer realm="Device management"');
    respond(res,401,{error:'Administrator authorization required'});return true;
+  }
+  if(req.url==='/api/alarms'&&req.method==='GET'){
+   if(!alarms){respond(res,404,{error:'Alarm engine unavailable'});return true;}
+   respond(res,200,alarms.snapshot());return true;
   }
   if(req.url==='/api/fleet'&&req.method==='GET'){
    if(!fleet){respond(res,404,{error:'Multi-PLC support unavailable'});return true;}
@@ -59,7 +66,9 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
   const testOnly=req.url==='/api/device/test'&&req.method==='POST';
   const fleetTest=req.url==='/api/fleet/test'&&req.method==='POST';
   const fleetApply=req.url==='/api/fleet/apply'&&req.method==='POST';
-  if(!testOnly&&!fleetTest&&!fleetApply&&
+  const alarmConfig=req.url==='/api/alarms/config'&&req.method==='POST';
+  const alarmAck=req.url==='/api/alarms/ack'&&req.method==='POST';
+  if(!testOnly&&!fleetTest&&!fleetApply&&!alarmConfig&&!alarmAck&&
     (req.url!=='/api/device/apply'||req.method!=='POST')){
    respond(res,404,{error:'Unknown device command'});return true;
   }
@@ -79,7 +88,20 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
     const body=JSON.parse(Buffer.concat(parts).toString('utf8')) as Record<string,unknown>;
     if(!body||typeof body!=='object'||Array.isArray(body))
       throw Error('Invalid configuration envelope');
-    if(fleetTest||fleetApply){
+    if(alarmConfig||alarmAck){
+      if(!alarms)throw Error('Alarm engine unavailable');
+      const keys=Object.keys(body);
+      if(alarmAck){
+       if(keys.length!==1||keys[0]!=='id'||typeof body['id']!=='string')
+        throw Error('Invalid acknowledgment request');
+       respond(res,200,alarms.acknowledge(body['id']));
+      }else{
+       if(keys.some(k=>!['revision','rules'].includes(k))||
+        !Number.isSafeInteger(body['revision']))
+        throw Error('Invalid alarm configuration request');
+       respond(res,200,alarms.configure({rules:body['rules']},body['revision'] as number));
+      }
+    }else if(fleetTest||fleetApply){
       if(!fleet)throw Error('Multi-PLC runtime unavailable');
       const names=Object.keys(body);
       if(fleetTest){
