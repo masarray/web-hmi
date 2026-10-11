@@ -1,5 +1,6 @@
 /** Versioned, executable-code-free project model. */
 import {findSymbol} from './symbols.ts';
+import type {VisualRule} from './visual-runtime.ts';
 export type AnimationMode='none'|'spin'|'pulse';
 export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'text' | 'breaker' | 'symbol';
 export interface Shape {
@@ -9,6 +10,8 @@ export interface Shape {
   /** Optional additions keep existing v1 projects backward compatible. */
   symbolId?:string;
   animation?:AnimationMode;
+  visualRule?:VisualRule;
+  threshold?:number;
 }
 export interface Page { id:string; name:string; shapes:Shape[] }
 export interface Project {
@@ -37,7 +40,9 @@ export function isShape(v:unknown):v is Shape {
       (typeof v.symbolId==='string' && !!findSymbol(v.symbolId))) &&
     (v.kind!=='symbol'||(typeof v.symbolId==='string'&&!!findSymbol(v.symbolId))) &&
     (v.animation===undefined||
-      v.animation==='none'||v.animation==='spin'||v.animation==='pulse');
+      v.animation==='none'||v.animation==='spin'||v.animation==='pulse') &&
+    (v.visualRule===undefined||v.visualRule==='when-true'||v.visualRule==='at-least') &&
+    (v.threshold===undefined||finite(v.threshold,-1000000,1000000));
 }
 export function parseProject(v:unknown):Project {
   if (!obj(v) || v.schemaVersion!==1 || !named(v.id,80) ||
@@ -61,7 +66,9 @@ export function parseProject(v:unknown):Project {
         width:s.width,height:s.height,fill:s.fill,stroke:s.stroke,
         text:s.text,tagId:s.tagId,
         ...(s.symbolId!==undefined?{symbolId:s.symbolId}:{}),
-        ...(s.animation!==undefined?{animation:s.animation}:{})};
+        ...(s.animation!==undefined?{animation:s.animation}:{}),
+        ...(s.visualRule!==undefined?{visualRule:s.visualRule}:{}),
+        ...(s.threshold!==undefined?{threshold:s.threshold}:{})};
     });
     return {id:raw.id,name:raw.name,shapes};
   });
@@ -115,7 +122,7 @@ export function insertShape(p:Project,s:Shape):Project {
   return {...p,pages:p.pages.map(page=>page.id===p.activePageId?
     {...page,shapes:[...page.shapes,s]}:page)};
 }
-export type ShapeEdit=Partial<Pick<Shape,'name'|'x'|'y'|'width'|'height'|'fill'|'stroke'|'text'|'tagId'|'animation'>>;
+export type ShapeEdit=Partial<Pick<Shape,'name'|'x'|'y'|'width'|'height'|'fill'|'stroke'|'text'|'tagId'|'animation'|'visualRule'|'threshold'>>;
 export function editShape(p:Project,id:string,edit:ShapeEdit):Project {
   return {...p,pages:p.pages.map(page=>page.id===p.activePageId?
     {...page,shapes:page.shapes.map(s=>{

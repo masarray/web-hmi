@@ -128,3 +128,17 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 
 .symbol-more{display:block;margin:0 9px 5px;width:calc(100% - 18px);background:#254559;border:1px solid #43718a;
   font-size:11px;text-align:center;color:#c1ebfa}
+
+/* CP-06: simulation has a visible boundary, not a misleading live indicator. */
+.simulation-bar{display:flex;align-items:center;gap:9px;padding:7px 12px;
+  background:#372b20;border-bottom:1px solid #8e613a;flex-wrap:wrap;
+  color:#f2d9a5;font-size:11px}
+.simulation-bar strong{font-size:10px;letter-spacing:.8px;
+  color:#ffc678;white-space:nowrap}
+.simulation-bar label{display:flex;align-items:center;gap:5px}
+.simulation-bar select,.simulation-bar input{width:auto;max-width:200px;
+  min-width:60px;background:#1c2630;color:#f6ead7;border:1px solid #956f48;
+  border-radius:3px;padding:4px 6px;font-size:11px}
+.simulation-bar button{border:1px solid #8f7050;background:#4b3d2e;
+  color:#fff0d2;padding:4px 9px}
+.visual-quality-indicator{font-family:Inter,"Segoe UI",Arial,sans-serif}

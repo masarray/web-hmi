@@ -4,6 +4,8 @@ import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
   newShape, newSymbol, insertShape, editShape, deleteShape, createPage } from './document';
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
+import {evaluatePage,updateTagSample,type TagQuality,type TagTable,
+  type VisualRule,type VisualState} from './visual-runtime';
 import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } from './actions';
 import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align, type Axis } from './selection-ops';
 
@@ -27,6 +29,19 @@ export class EditorComponent {
   readonly snapEnabled=signal(true);
   readonly gridVisible=signal(true);
   readonly previewMode=signal(false);
+  /** Transient test-feed, never saved to project or undo history. */
+  readonly simulatedSamples=signal<TagTable>(new Map());
+  readonly simulatedTagChoice=signal('');
+  readonly simulatedQuality=signal<TagQuality>('GOOD');
+  readonly simulatedValue=signal(1);
+  readonly boundTags=computed(()=>[...new Set(this.activePage().shapes
+    .filter(s=>s.kind==='symbol'&&s.tagId.trim().length>0).map(s=>s.tagId))]);
+  readonly simulatedTag=computed(()=>{
+    const chosen=this.simulatedTagChoice();
+    return this.boundTags().includes(chosen)?chosen:(this.boundTags()[0]??'');
+  });
+  readonly visualStates=computed(()=>evaluatePage(
+    this.activePage().shapes,this.simulatedSamples(),this.previewMode()));
   readonly zoom=signal(1);
   readonly status=signal('Editor ready · local project');
   readonly canUndo=signal(false);
@@ -208,6 +223,42 @@ export class EditorComponent {
     }catch(error){this.status.set(String(error));}
   }
 
+  stateOf(shape:Shape):VisualState|undefined{return this.visualStates().get(shape.id);}
+  symbolAnimated(shape:Shape):boolean{return this.stateOf(shape)?.animate??false;}
+  partStroke(shape:Shape,rotor:boolean):string{
+    const state=this.stateOf(shape);
+    if(!state || !shape.tagId || !this.previewMode())return shape.stroke;
+    if(state.warning)return state.stroke;
+    return rotor?state.stroke:shape.stroke;
+  }
+  changeSimulatedTag(event:Event):void{
+    this.simulatedTagChoice.set((event.target as HTMLSelectElement).value);
+  }
+  changeSimulatedQuality(event:Event):void{
+    const quality=(event.target as HTMLSelectElement).value as TagQuality;
+    if(!(['GOOD','UNCERTAIN','BAD','STALE'] as string[]).includes(quality))return;
+    this.simulatedQuality.set(quality);
+    this.publishSimulation(this.simulatedValue());
+  }
+  simulateNumber(event:Event):void{
+    const value=Number((event.target as HTMLInputElement).value);
+    if(Number.isFinite(value))this.simulateValue(value);
+  }
+  simulateValue(value:number):void{
+    this.simulatedValue.set(value);
+    this.publishSimulation(value);
+  }
+  private publishSimulation(value:number):void{
+    const tagId=this.simulatedTag();
+    if(!tagId)return;
+    const previous=this.simulatedSamples();
+    const sequence=(previous.get(tagId)?.sequence??0)+1;
+    try{
+      this.simulatedSamples.set(updateTagSample(previous,{
+        tagId,value,quality:this.simulatedQuality(),sequence
+      }));
+    }catch(error){this.status.set(String(error));}
+  }
   symbolUrl(shape:Shape):string{
     return findSymbol(shape.symbolId??'')?.href??'';
   }
@@ -368,7 +419,7 @@ export class EditorComponent {
     const selected=this.selected();
     if (!selected) return;
     const target=e.target as HTMLInputElement;
-    const value=['x','y','width','height'].includes(key)?
+    const value=['x','y','width','height','threshold'].includes(key)?
       Number(target.value):target.value;
     try { this.record(editShape(this.project(),selected.id,{[key]:value} as ShapeEdit)); }
     catch(error) { this.status.set(String(error));target.value=String(selected[key]); }

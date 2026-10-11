@@ -97,6 +97,35 @@
         <button type="button" (click)="zoomBy(0.1)">＋</button>
         <button type="button" (click)="zoom.set(1)" title="Reset zoom to 100%">100%</button>
       </div>
+      @if(previewMode()){
+        <div class="simulation-bar" data-testid="simulation-bar">
+          <strong>SIMULATION ONLY</strong>
+          @if(boundTags().length){
+            <label>Tag
+              <select aria-label="Simulation tag" [value]="simulatedTag()" (change)="changeSimulatedTag($event)">
+                @for(tag of boundTags();track tag){<option [value]="tag">{{tag}}</option>}
+              </select>
+            </label>
+            <button type="button" (click)="simulateValue(1)">Set ON</button>
+            <button type="button" (click)="simulateValue(0)">Set OFF</button>
+            <label>Numeric value
+              <input type="number" aria-label="Simulated numeric value"
+                [value]="simulatedValue()" (change)="simulateNumber($event)">
+            </label>
+            <label>Quality
+              <select aria-label="Simulation quality" [value]="simulatedQuality()"
+                (change)="changeSimulatedQuality($event)">
+                <option value="GOOD">GOOD</option>
+                <option value="UNCERTAIN">UNCERTAIN</option>
+                <option value="BAD">BAD</option>
+                <option value="STALE">STALE</option>
+              </select>
+            </label>
+          } @else {
+            <span>No symbols with tag binding on this page. Configure a tag in Studio.</span>
+          }
+        </div>
+      }
       <div class="drawing-area">
         <div class="page-frame">
           <svg #viewport class="viewport" [attr.viewBox]="'0 0 '+(1200/zoom())+' '+(700/zoom())"
@@ -115,6 +144,8 @@
             }
             @for(shape of activePage().shapes;track shape.id){
               <g class="canvas-node" [attr.data-shape-id]="shape.id"
+                [attr.data-visual-quality]="previewMode() && shape.kind==='symbol' && shape.tagId ? stateOf(shape)?.quality : null"
+                [attr.data-visual-status]="previewMode() && shape.kind==='symbol' && shape.tagId ? stateOf(shape)?.status : null"
                 [attr.transform]="'translate('+displayX(shape)+','+displayY(shape)+')'"
                 (pointerdown)="beginDrag($event,shape)">
                 @switch(shape.kind){
@@ -145,34 +176,53 @@
                   }
                   @case('symbol'){
                     @if(processGraphic(shape.symbolId);as graphic){
-                      <svg class="process-graphic" [class.process-pulse]="previewMode() && shape.animation==='pulse'"
-                        [class.process-entire-spin]="previewMode() && shape.animation==='spin' && !graphic.hasRotor"
+                      <svg class="process-graphic" [class.process-pulse]="symbolAnimated(shape) && shape.animation==='pulse'"
+                        [class.process-entire-spin]="symbolAnimated(shape) && shape.animation==='spin' && !graphic.hasRotor"
                         x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
                         [attr.viewBox]="graphic.viewBox" preserveAspectRatio="xMidYMid meet"
                         [attr.data-process-id]="graphic.id">
                         <rect x="0" y="0" width="100%" height="100%" fill="transparent"
                           pointer-events="all"/>
                         @for(part of graphic.parts;track $index){
-                          <g [class.process-rotor]="previewMode() && shape.animation==='spin' && part.rotor===true">
+                          <g [class.process-rotor]="symbolAnimated(shape) && shape.animation==='spin' && part.rotor===true">
                             @if(part.kind==='path'){
-                              <path [attr.d]="part.d" fill="none" [attr.stroke]="shape.stroke"
+                              <path [attr.d]="part.d" fill="none" [attr.stroke]="partStroke(shape,part.rotor===true)"
                                 stroke-width="1.7" vector-effect="non-scaling-stroke"
                                 stroke-linecap="round" stroke-linejoin="round"/>
                             } @else {
                               <ellipse [attr.cx]="part.cx" [attr.cy]="part.cy"
                                 [attr.rx]="part.rx" [attr.ry]="part.ry"
-                                fill="none" [attr.stroke]="shape.stroke"
+                                fill="none" [attr.stroke]="partStroke(shape,part.rotor===true)"
                                 stroke-width="1.7" vector-effect="non-scaling-stroke"/>
                             }
                           </g>
                         }
                       </svg>
                     } @else {
-                      <image class="svg-library-symbol" [class.symbol-spin]="previewMode() && shape.animation==='spin'"
-                        [class.symbol-pulse]="previewMode() && shape.animation==='pulse'"
+                      <image class="svg-library-symbol" [class.symbol-spin]="symbolAnimated(shape) && shape.animation==='spin'"
+                        [class.symbol-pulse]="symbolAnimated(shape) && shape.animation==='pulse'"
                         x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
                         preserveAspectRatio="xMidYMid meet" [attr.href]="symbolUrl(shape)"/>
                     }
+                  }
+                }
+                @if(previewMode() && shape.kind==='symbol' && shape.tagId){
+                  @if(stateOf(shape);as visual){
+                    <g class="visual-quality-indicator" pointer-events="none">
+                      <circle [attr.cx]="displayWidth(shape)-5" cy="5" r="6"
+                        [attr.fill]="visual.stroke" stroke="#111e29" stroke-width="2"/>
+                      @if(visual.warning){
+                        <rect x="-4" y="-4" [attr.width]="displayWidth(shape)+8"
+                          [attr.height]="displayHeight(shape)+8"
+                          fill="none" [attr.stroke]="visual.stroke"
+                          stroke-width="2.5" stroke-dasharray="6 4"/>
+                        <rect x="0" [attr.y]="displayHeight(shape)+6" width="75"
+                          height="19" rx="3" fill="#192530" [attr.stroke]="visual.stroke"/>
+                        <text x="5" [attr.y]="displayHeight(shape)+20"
+                          [attr.fill]="visual.stroke" font-size="12"
+                          font-weight="600">{{visual.status}}</text>
+                      }
+                    </g>
                   }
                 }
                 @if(selectionLookup().has(shape.id) && !previewMode()){
@@ -192,7 +242,9 @@
           </svg>
         </div>
       </div>
-      <div class="canvas-footer"><span>1200 × 700 • SVG Workspace</span><span>All values shown are design placeholders, not live equipment data</span></div>
+      <div class="canvas-footer"><span>1200 × 700 • SVG Workspace</span>
+        <span>{{previewMode()?'SIMULATED VALUES — NOT CONNECTED TO INDUSTRIAL EQUIPMENT':'Design placeholders — no live equipment data'}}</span>
+      </div>
     </main>
 
     <aside class="inspector">
@@ -270,13 +322,30 @@
                 <option value="pulse">Pulse softly</option>
               </select>
             </label>
-            <p class="helper">Animation runs in Preview mode only. No live status binding yet.</p>
+            <p class="helper">Animation runs in Preview only. With a bound tag, it
+              runs only when the simulated sample is GOOD and active.</p>
           }
         </div>
         <div class="inspector-section">
-          <h3>TAG BINDING (METADATA)</h3>
+          <h3>TAG BINDING (SIMULATOR PREVIEW)</h3>
           <label>Tag identifier<input type="text" placeholder="Device/Tag" maxlength="160" [value]="shape.tagId" (change)="updateProperty('tagId',$event)"></label>
-          <p class="helper">Live tag runtime is not yet implemented.</p>
+          @if(shape.kind==='symbol' && shape.tagId){
+            <label>Visual activation rule
+              <select aria-label="Visual activation rule" [value]="shape.visualRule??'when-true'"
+                (change)="updateProperty('visualRule',$event)">
+                <option value="when-true">ON when true / non-zero</option>
+                <option value="at-least">ON when value ≥ threshold</option>
+              </select>
+            </label>
+            @if(shape.visualRule==='at-least'){
+              <label>Threshold
+                <input aria-label="Visual threshold" type="number"
+                  [value]="shape.threshold??1" (change)="updateProperty('threshold',$event)">
+              </label>
+            }
+          }
+          <p class="helper">Tag binding is configuration only. Preview uses local simulated values;
+            BAD, UNCERTAIN, STALE, or missing values stop animation.</p>
         </div>
         <div class="inspector-section">
           <div class="quick-actions">
