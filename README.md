@@ -83,3 +83,10 @@ status and concise read counters. See [CP-12](docs/architecture/CP12.md).
 Open **Devices & Tags → Multiple PLCs**. Add your PLCs, edit tags, and
 apply them as a group. One server poller per PLC serves every browser over
 the existing WebSocket. See [CP-13 engineering guide](docs/architecture/CP13.md).
+
+## Alarms & events (CP-14)
+
+Open **Alarms** for live conditions, acknowledge, and recent events. Engineers
+can add threshold rules under the collapsible settings area. Server-side
+processing follows tag quality and preserves alarms during connection loss.
+See [CP-14](docs/architecture/CP14.md).

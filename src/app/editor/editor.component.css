@@ -246,3 +246,46 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 .fleet-actions button.mapping-apply{background:#27674f}
 .fleet-actions button:disabled{opacity:.4}
 .fleet-token{padding:4px 18px 9px}
+
+/* CP-14 operator-first alarm center. Compact summaries and optional engineering rules. */
+.alarm-count{display:inline-block;min-width:18px;padding:1px 5px;border-radius:20px;
+ background:#b3484e;color:#fff;font-size:10px;margin-left:5px}
+.alarm-panel{position:absolute;inset:0;z-index:14;display:flex;flex-direction:column;
+ background:#101f2a;min-height:0;overflow:hidden;color:#dbeaf1;font-size:12px}
+.alarm-head{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;
+ background:#1a303d;border-bottom:1px solid #304956}
+.alarm-head strong{font-size:17px}.alarm-head span{display:block;color:#8daaba;margin-top:4px}
+.alarm-toolbar{display:flex;align-items:end;flex-wrap:wrap;gap:9px;padding:11px 18px;
+ border-bottom:1px solid #304552}
+.alarm-toolbar label{font-size:10px;color:#9db9c7;flex:1;max-width:290px;min-width:160px}
+.alarm-toolbar input,.alarm-rule-row input,.alarm-rule-row select{
+ width:100%;min-width:0;background:#0b1923;color:#e7f2f7;border:1px solid #355264;
+ border-radius:4px;padding:7px;font-size:11px}
+.alarm-toolbar input{display:block;margin-top:5px}
+.alarm-toolbar button,.alarm-rule-actions button,.alarm-item button{
+ background:#284e65;border:1px solid #47738a;border-radius:4px;padding:7px 11px;color:#e4f3fa}
+.alarm-chip{background:#432c35;color:#ffd7d2;border-radius:13px;padding:6px 10px}
+.alarm-scroll{overflow:auto;flex:1;min-height:70px;padding:10px 18px}
+.alarm-item{display:flex;align-items:center;gap:12px;padding:12px;margin-bottom:6px;
+ border:1px solid #365269;border-left:4px solid #d7a95b;background:#182d3b;border-radius:5px}
+.alarm-item.critical{border-left-color:#f16f79}
+.alarm-item.unknown{border-left-color:#8e93ac}
+.alarm-item-text{flex:1;min-width:0}
+.alarm-item-text strong{display:block;font-size:12px}
+.alarm-item-text span{display:block;margin-top:4px;color:#9bb4c4;font-size:10px}
+.alarm-severity,.alarm-acked{font-size:10px;color:#d1b793}
+.alarm-acked{color:#8ed2b0}.alarm-empty{padding:28px;text-align:center;color:#94b0bd}
+.alarm-event{display:grid;grid-template-columns:75px 1fr auto;gap:12px;padding:10px 6px;
+ border-bottom:1px solid #293e4c;font-size:11px}
+.alarm-event time{color:#96b3c1}.alarm-event b{color:#d6ba94}
+.alarm-rule-editor{flex:none;max-height:47%;overflow:auto;border-top:1px solid #344c5c;padding:9px 18px}
+.alarm-rule-editor summary{cursor:pointer;font-weight:600;color:#a5d5e5}
+.alarm-rule-hint{font-size:10px;color:#9bb6c4}
+.alarm-rule-grid{display:grid;gap:5px}
+.alarm-rule-row{display:grid;grid-template-columns:minmax(110px,2fr) minmax(130px,2fr)
+ minmax(80px,1fr) 72px 88px 27px;gap:5px}
+.alarm-rule-row button{color:#e8aaae}
+.alarm-rule-actions{display:flex;gap:8px;margin-top:9px}
+.alarm-message{padding:10px 18px;color:#a9c7d5;margin:0;border-top:1px solid #2b4554}
+.alarm-storage-error{color:#ffb4b4;margin:8px 18px}
+@media(max-width:920px){.alarm-rule-row{grid-template-columns:repeat(3,minmax(90px,1fr))}}

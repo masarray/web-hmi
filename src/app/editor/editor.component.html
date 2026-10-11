@@ -9,6 +9,10 @@
       @if(selected() && !previewMode()){
         <button type="button" (click)="duplicateSelected()" aria-label="Duplicate selected object" title="Duplicate selected object (Ctrl+D)">⧉ Duplicate</button>
       }
+      <button type="button" aria-label="Open alarms" [class.on]="alarmOpen()"
+        (click)="toggleAlarmCenter()">⚑ Alarms
+        @if(alarmUnacknowledged()){<span class="alarm-count">{{alarmUnacknowledged()}}</span>}
+      </button>
       <button type="button" aria-label="Configure Modbus tags" [class.on]="mappingOpen()"
         (click)="toggleMapping()">⚙ Devices & Tags</button>
       <button type="button" (click)="exportProject()">⇩ Export</button>
@@ -83,6 +87,109 @@
     </aside>
 
     <main class="center">
+      @if(alarmOpen()){
+        <section class="alarm-panel" data-testid="alarm-center" aria-label="Alarm and event center">
+          <header class="alarm-head">
+            <div><strong>Alarms</strong>
+              <span>Active conditions and recent events</span></div>
+            <button type="button" (click)="toggleAlarmCenter()" aria-label="Close alarms">✕ Close</button>
+          </header>
+          <div class="alarm-toolbar">
+            <label>Server access key
+              <input type="password" autocomplete="off" aria-label="Alarm server token"
+                [value]="adminToken()" (input)="setAdminToken($event)"
+                placeholder="Enter server key">
+            </label>
+            <button type="button" (click)="refreshAlarms()"
+              [disabled]="alarmBusy()||adminToken().length<32">Connect</button>
+            @if(alarms()){
+              <span class="alarm-chip">{{alarmUnacknowledged()}} need attention</span>
+              <button type="button" (click)="alarmHistoryOpen.set(!alarmHistoryOpen())">
+                {{alarmHistoryOpen()?'Active alarms':'Event history'}}
+              </button>
+            }
+          </div>
+          @if(alarms();as state){
+            @if(state.storageError){
+              <p class="alarm-storage-error" role="alert">Event storage error: {{state.storageError}}</p>
+            }
+            @if(!alarmHistoryOpen()){
+              <div class="alarm-scroll">
+                @for(alarm of state.active;track alarm.id){
+                  <article class="alarm-item" [class.critical]="alarm.severity==='critical'"
+                    [class.unknown]="alarm.phase==='UNKNOWN'">
+                    <div class="alarm-item-text">
+                      <strong>{{alarm.label}}</strong>
+                      <span>{{alarm.tagId}} · {{alarm.phase==='UNKNOWN'?'Signal unavailable':
+                        alarm.phase==='ACTIVE'?'Active':'Normal'}}
+                        @if(alarm.since){ · <time>{{alarmClock(alarm.since)}}</time> }
+                      </span>
+                    </div>
+                    <span class="alarm-severity">{{alarm.severity}}</span>
+                    @if(alarm.phase==='ACTIVE'&&!alarm.acknowledged){
+                      <button type="button" [disabled]="alarmBusy()"
+                        [attr.aria-label]="'Acknowledge '+alarm.label"
+                        (click)="acknowledgeAlarm(alarm.id)">Acknowledge</button>
+                    } @else if(alarm.acknowledged){
+                      <span class="alarm-acked">Acknowledged</span>
+                    }
+                  </article>
+                } @empty {
+                  <div class="alarm-empty">No active alarms</div>
+                }
+              </div>
+            } @else {
+              <div class="alarm-scroll" aria-label="Recent alarm events">
+                @for(event of state.recent;track event.id){
+                  <div class="alarm-event">
+                    <time>{{alarmClock(event.time)}}</time>
+                    <span>{{event.label}}</span><b>{{event.type}}</b>
+                  </div>
+                } @empty {<div class="alarm-empty">No events yet</div>}
+              </div>
+            }
+            <details class="alarm-rule-editor">
+              <summary>Configure alarm rules · {{alarmDraft().length}}</summary>
+              <p class="alarm-rule-hint">Choose a tag and threshold. Active alarms stay visible until the signal returns to normal.</p>
+              <div class="alarm-rule-grid" aria-label="Alarm rules">
+                @for(rule of alarmDraft();track $index){
+                  <div class="alarm-rule-row">
+                    <input [attr.aria-label]="'Alarm label '+($index+1)"
+                      [value]="rule.label" (change)="setAlarmRuleField($index,'label',$event)">
+                    <input [attr.aria-label]="'Alarm tag '+($index+1)"
+                      [value]="rule.tagId" (change)="setAlarmRuleField($index,'tagId',$event)"
+                      list="hmi-alarm-tags">
+                    <select [attr.aria-label]="'Alarm condition '+($index+1)"
+                      [value]="rule.condition" (change)="setAlarmRuleField($index,'condition',$event)">
+                      <option value="above">Above</option><option value="below">Below</option>
+                      <option value="equals">Equals</option>
+                    </select>
+                    <input type="number" [attr.aria-label]="'Alarm threshold '+($index+1)"
+                      [value]="rule.threshold" (change)="setAlarmRuleField($index,'threshold',$event)">
+                    <select [attr.aria-label]="'Alarm severity '+($index+1)"
+                      [value]="rule.severity" (change)="setAlarmRuleField($index,'severity',$event)">
+                      <option value="warning">Warning</option><option value="critical">Critical</option>
+                    </select>
+                    <button type="button" [attr.aria-label]="'Remove alarm rule '+($index+1)"
+                      (click)="removeAlarmRule($index)">✕</button>
+                  </div>
+                }
+              </div>
+              <datalist id="hmi-alarm-tags">
+                @for(tag of availableMappingTags();track tag.id){
+                  <option [value]="tag.id">{{tag.label}}</option>
+                }
+              </datalist>
+              <div class="alarm-rule-actions">
+                <button type="button" (click)="addAlarmRule()" [disabled]="alarmDraft().length>=64">＋ Add rule</button>
+                <button type="button" (click)="saveAlarmRules()"
+                  [disabled]="!alarmRulesValid()||alarmBusy()">Save alarm rules</button>
+              </div>
+            </details>
+          }
+          <p class="alarm-message" role="status">{{alarmMessage()}}</p>
+        </section>
+      }
       @if(mappingOpen()){
         <section class="mapping-panel" aria-label="Modbus tag mapping editor" data-testid="mapping-editor">
           <div class="mapping-head">

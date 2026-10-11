@@ -5,6 +5,8 @@ import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
 import {TagStreamClient,type StreamStatus} from './tag-stream-client';
+import {validateAlarmConfig,type AlarmRule,type AlarmSnapshot,
+ type AlarmCondition,type AlarmSeverity} from '../../shared/alarm-contract.ts';
 import {qualifiedTag,validateFleet,type FleetDevice} from '../../shared/device-fleet.ts';
 import {validateModbusConfig,planReads,widthOf,dataTypeOf,
   type ModbusConfig,type RegisterTag,type ReadFunction,
@@ -117,6 +119,18 @@ export class EditorComponent implements OnDestroy {
     this.activePage().shapes.find(s=>s.id===this.selectedId())??null);
   readonly preview=signal<DragPreview|null>(null);
   readonly dragOffsets=signal<Record<string,{x:number;y:number}>>({});
+  readonly alarmOpen=signal(false);
+  readonly alarmBusy=signal(false);
+  readonly alarmMessage=signal('Connect with your server key to view alarms');
+  readonly alarms=signal<AlarmSnapshot|null>(null);
+  readonly alarmDraft=signal<AlarmRule[]>([]);
+  readonly alarmHistoryOpen=signal(false);
+  readonly alarmUnacknowledged=computed(()=>this.alarms()?.unacknowledged??0);
+  readonly alarmRulesValid=computed(()=>{
+    try{validateAlarmConfig({rules:this.alarmDraft()});return true;}
+    catch{return false;}
+  });
+  private alarmTimer:ReturnType<typeof setInterval>|null=null;
   readonly mappingOpen=signal(false);
   readonly fleetMode=signal(false);
   readonly fleetDraft=signal<FleetDevice[]>(restoreFleetDraft());
@@ -191,6 +205,7 @@ export class EditorComponent implements OnDestroy {
   showMoreSymbols():void{this.symbolLimit.update(n=>Math.min(n+24,this.symbolTotal));}
   toggleMapping():void{
     if(this.previewMode())return;
+    if(!this.mappingOpen()&&this.alarmOpen())this.toggleAlarmCenter();
     this.mappingOpen.update(open=>!open);
     if(!this.mappingOpen())this.stopDeviceMonitor();
   }
@@ -395,6 +410,105 @@ export class EditorComponent implements OnDestroy {
       this.deviceDiagnostics.set(null);
     }
   }
+  toggleAlarmCenter():void{
+    const show=!this.alarmOpen();
+    this.alarmOpen.set(show);
+    if(show){
+      if(this.mappingOpen())this.toggleMapping();
+      if(this.adminToken().length>=32)void this.refreshAlarms();
+      this.startAlarmTimer();
+    }else this.stopAlarmTimer();
+  }
+  private stopAlarmTimer():void{
+    if(this.alarmTimer!==null)clearInterval(this.alarmTimer);
+    this.alarmTimer=null;
+  }
+  private startAlarmTimer():void{
+    if(this.alarmTimer!==null)return;
+    this.alarmTimer=setInterval(()=>{
+      if(this.alarmOpen()&&this.adminToken().length>=32&&!this.alarmBusy())
+        void this.refreshAlarms(false);
+    },4000);
+  }
+  private alarmUrl(path=''):string{
+    const port=location.port==='4200'?':8787':'';
+    return location.protocol+'//'+location.hostname+port+'/api/alarms'+path;
+  }
+  private async alarmRequest(path:string,body?:unknown):Promise<AlarmSnapshot>{
+    if(this.adminToken().length<32)throw Error('Enter the server access key');
+    const response=await fetch(this.alarmUrl(path),{
+      method:body===undefined?'GET':'POST',credentials:'omit',mode:'cors',
+      signal:AbortSignal.timeout(15000),
+      headers:{Authorization:'Bearer '+this.adminToken(),
+        ...(body===undefined?{}:{'Content-Type':'application/json'})},
+      ...(body===undefined?{}:{body:JSON.stringify(body)})
+    });
+    const data=await response.json() as AlarmSnapshot&{error?:string};
+    if(!response.ok)throw Error(data.error??('Server HTTP '+response.status));
+    if(!Number.isSafeInteger(data.revision)||!Array.isArray(data.rules)||
+       !Array.isArray(data.active)||!Array.isArray(data.recent))
+      throw Error('Invalid alarm status response');
+    return data;
+  }
+  async refreshAlarms(message=true):Promise<void>{
+    if(this.alarmBusy())return;
+    this.alarmBusy.set(true);
+    try{
+      const snapshot=await this.alarmRequest('');
+      this.alarms.set(snapshot);
+      // Operator's unsaved editing is preserved on background refresh.
+      if(message)this.alarmDraft.set([...snapshot.rules]);
+      if(message)this.alarmMessage.set('Connected · '+snapshot.rules.length+' rules');
+    }catch(error){
+      this.alarmMessage.set('Cannot load alarms: '+String(error));
+    }finally{this.alarmBusy.set(false);}
+  }
+  setAlarmRuleField(index:number,field:keyof AlarmRule,event:Event):void{
+    const prev=this.alarmDraft()[index];
+    if(!prev)return;
+    const value=(event.target as HTMLInputElement|HTMLSelectElement).value;
+    const data:AlarmRule={...prev,[field]:
+      field==='threshold'||field==='hysteresis'?Number(value):value};
+    this.alarmDraft.update(items=>items.map((item,i)=>i===index?data:item));
+  }
+  addAlarmRule():void{
+    if(this.alarmDraft().length>=64)return;
+    let i=1;const names=new Set(this.alarmDraft().map(x=>x.id));
+    while(names.has('alarm'+i))i++;
+    const tagId=this.availableMappingTags()[0]?.id??'Plant/Motor';
+    this.alarmDraft.update(rules=>[...rules,{
+      id:'alarm'+i,label:'Alarm '+i,tagId,condition:'above' as AlarmCondition,
+      threshold:1,hysteresis:0,severity:'warning' as AlarmSeverity
+    }]);
+  }
+  removeAlarmRule(index:number):void{
+    this.alarmDraft.update(list=>list.filter((_,i)=>i!==index));
+  }
+  async saveAlarmRules():Promise<void>{
+    const current=this.alarms();
+    if(this.alarmBusy()||!current||!this.alarmRulesValid())return;
+    this.alarmBusy.set(true);
+    try{
+      const response=await this.alarmRequest('/config',{
+        revision:current.revision,rules:validateAlarmConfig({rules:this.alarmDraft()}).rules
+      });
+      this.alarms.set(response);this.alarmDraft.set([...response.rules]);
+      this.alarmMessage.set('Alarm rules saved');
+    }catch(error){this.alarmMessage.set('Save failed: '+String(error));}
+    finally{this.alarmBusy.set(false);}
+  }
+  async acknowledgeAlarm(id:string):Promise<void>{
+    if(this.alarmBusy())return;
+    this.alarmBusy.set(true);
+    try{
+      this.alarms.set(await this.alarmRequest('/ack',{id}));
+      this.alarmMessage.set('Alarm acknowledged');
+    }catch(error){this.alarmMessage.set('Acknowledge failed: '+String(error));}
+    finally{this.alarmBusy.set(false);}
+  }
+  alarmClock(time:number):string{
+    return new Date(time).toLocaleTimeString();
+  }
   setAdminToken(event:Event):void{
     this.stopDeviceMonitor();
     this.adminToken.set((event.target as HTMLInputElement).value);
@@ -403,6 +517,8 @@ export class EditorComponent implements OnDestroy {
     this.fleetRevision.set(null);
     this.deviceDiagnostics.set(null);
     this.deviceProbeStatus.set('');
+    this.alarms.set(null);
+    this.alarmDraft.set([]);
   }
   private deviceApiUrl(path:'status'|'apply'|'test'):string{
     // Dev serves Angular on :4200; production should proxy /api/device on the
@@ -544,6 +660,7 @@ export class EditorComponent implements OnDestroy {
     else this.tagStream.stop();
   });
   ngOnDestroy():void{
+    this.stopAlarmTimer();
     this.stopDeviceMonitor();
     this.tagStream.stop();
     this.cancelFreshnessTimer();
@@ -829,6 +946,7 @@ export class EditorComponent implements OnDestroy {
     }
   }
   togglePreview():void {
+    if(this.alarmOpen())this.toggleAlarmCenter();
     if(this.mappingOpen())this.mappingOpen.set(false);
     this.previewMode.update(v=>!v);
     this.selectOnly(null);

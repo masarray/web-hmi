@@ -15,3 +15,9 @@ config/modbus-active.json.tmp-*
 # Multi-PLC plant endpoints
 config/modbus-fleet.json
 config/modbus-fleet.json.tmp-*
+
+# Operator alarm configuration and event journal
+config/alarm-rules.json
+config/alarm-rules.json.tmp-*
+config/alarm-events.jsonl
+config/alarm-events.previous.jsonl
