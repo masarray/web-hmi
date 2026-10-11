@@ -13,7 +13,7 @@ concurrency:
 jobs:
   editor:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,10 +27,23 @@ jobs:
         run: npm run typecheck
       - name: Production build
         run: npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: E2E browser smoke
+        run: npm run test:e2e
       - name: Upload editor build
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: web-hmi-editor
           path: dist/web-hmi/browser/
           if-no-files-found: error
+          retention-days: 14
+      - name: Browser screenshot and failure traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-browser-evidence
+          path: test-results/
+          if-no-files-found: ignore
           retention-days: 14

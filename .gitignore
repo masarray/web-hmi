@@ -5,3 +5,5 @@ out-tsc/
 coverage/
 *.log
 .env
+playwright-report/
+test-results/
