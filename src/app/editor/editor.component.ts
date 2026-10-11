@@ -5,7 +5,7 @@ import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
 import {TagStreamClient,type StreamStatus} from './tag-stream-client';
-import {parseDynamicSymbol,findDynamicSymbol,resolveDynamicState,
+import {CB_ROTATING,parseDynamicSymbol,findDynamicSymbol,resolveDynamicState,
   composeLineSymbol,type DynamicSymbol,type DynamicAppearance,type PointMode} from './dynamic-symbol';
 import {qualifiedTag,validateFleet,type FleetDevice} from '../../shared/device-fleet.ts';
 import {validateModbusConfig,planReads,widthOf,dataTypeOf,
@@ -95,13 +95,18 @@ export class EditorComponent implements OnDestroy {
   readonly visualStates=computed(()=>evaluatePage(
     this.activePage().shapes,this.activeSamples(),this.previewMode(),
     this.freshnessClock()));
+  /** Single indexed definition catalog shared across all symbol instances. */
+  readonly dynamicCatalog=computed(()=>{
+    const items=[CB_ROTATING,...(this.project().customSymbols??[])];
+    return new Map(items.map(def=>[def.id,def] as const));
+  });
   readonly dynamicStates=computed(()=>{
     const result=new Map<string,DynamicAppearance>();
-    const defs=this.project().customSymbols??[];
+    const catalog=this.dynamicCatalog();
     const samples=this.activeSamples(),now=this.freshnessClock(),preview=this.previewMode();
     for(const shape of this.activePage().shapes){
       if(shape.kind!=='symbol')continue;
-      const def=findDynamicSymbol(shape.symbolId,defs);
+      const def=catalog.get(shape.symbolId??'');
       if(def)result.set(shape.id,resolveDynamicState(def,shape.pointMode??'double-point',
         samples.get(shape.tagId),now,preview,!!shape.tagId));
     }
@@ -750,7 +755,7 @@ export class EditorComponent implements OnDestroy {
   stateOf(shape:Shape):VisualState|undefined{return this.visualStates().get(shape.id);}
   dynamicSymbol(shape:Shape):DynamicSymbol|undefined{
     return shape.kind==='symbol'?
-      findDynamicSymbol(shape.symbolId,this.project().customSymbols??[]):undefined;
+      this.dynamicCatalog().get(shape.symbolId??''):undefined;
   }
   dynamicState(shape:Shape):DynamicAppearance|undefined{
     return this.dynamicStates().get(shape.id);
