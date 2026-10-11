@@ -71,3 +71,9 @@ activate the selected read-only Modbus mapping without manual JSON copying
 or server restart. Configuration is saved atomically for recovery; an
 unresponsive candidate does not displace a healthy active source.
 See [CP-11 architecture](docs/architecture/CP11.md).
+
+## Check PLC connection & see live health (CP-12)
+
+From **Devices & Tags**, use **Test PLC** for a read-only connection check before
+applying anything. With a server key, **Check server** displays live connection
+status and concise read counters. See [CP-12](docs/architecture/CP12.md).

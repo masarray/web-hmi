@@ -45,7 +45,8 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
   if(req.url==='/api/device/status'&&req.method==='GET'){
    respond(res,200,runtime.snapshot());return true;
   }
-  if(req.url!=='/api/device/apply'||req.method!=='POST'){
+  const testOnly=req.url==='/api/device/test'&&req.method==='POST';
+  if(!testOnly&&(req.url!=='/api/device/apply'||req.method!=='POST')){
    respond(res,404,{error:'Unknown device command'});return true;
   }
   if(req.headers['content-type']?.split(';')[0]?.trim()!=='application/json'){
@@ -62,11 +63,14 @@ export function createDeviceConfigHandler(runtime:DeviceRuntime,settings:{
     }
     const body=JSON.parse(Buffer.concat(parts).toString('utf8')) as Record<string,unknown>;
     if(!body||typeof body!=='object'||Array.isArray(body)||
-      Object.keys(body).some(key=>!['revision','config'].includes(key))||
-      !Number.isSafeInteger(body['revision'])||typeof body['revision']!=='number')
-     throw Error('Invalid configuration envelope');
+      (testOnly?Object.keys(body).some(key=>key!=='config'):
+       Object.keys(body).some(key=>!['revision','config'].includes(key))||
+       !Number.isSafeInteger(body['revision'])||
+       typeof body['revision']!=='number'))
+      throw Error('Invalid configuration envelope');
     const config=validateModbusConfig(body['config'] as ModbusConfig);
-    const result=await runtime.apply(config,body['revision']);
+    const result=testOnly?await runtime.testConnection(config):
+      await runtime.apply(config,body['revision'] as number);
     respond(res,200,{ok:true,...result});
    }catch(error){
     const msg=error instanceof Error?error.message:'Configuration failed';

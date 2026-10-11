@@ -212,3 +212,13 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 .mapping-control button.mapping-apply{background:#27674f;border-color:#4fa681;color:#effff6}
 .mapping-control button:disabled{opacity:.4}
 .mapping-control span{font-size:10px;color:#96b6c2;padding:7px 0}
+
+/* CP-12: concise live device health, no extra popup or JS chart. */
+.device-probe{margin:0 18px 10px;font-size:11px;color:#b7e4f1}
+.device-diagnostics{margin:0 18px 10px;display:flex;flex-wrap:wrap;align-items:center;
+ gap:6px 14px;font-size:11px;color:#9ab5c2;padding:8px 11px;
+ background:#122d3b;border:1px solid #294f65;border-radius:5px}
+.device-diagnostics b{font-weight:600;color:#def3fb}
+.device-diagnostics .device-error{color:#ffb5aa;flex-basis:100%;overflow:hidden;text-overflow:ellipsis}
+[data-testid=device-runtime-health][data-health=HEALTHY]{color:#8ee1c6}
+[data-testid=device-runtime-health][data-health=DEGRADED]{color:#ffb5aa}
