@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "check": "npm test && npm run typecheck && npm run build && npm run test:e2e",
     "start:server": "node --experimental-strip-types server/main.ts",
-    "typecheck:server": "tsc -p tsconfig.server.json"
+    "typecheck:server": "tsc -p tsconfig.server.json",
+    "test:server": "node --experimental-strip-types --test tests/server*.test.ts"
   },
   "engines": {
     "node": ">=22.22.3"
@@ -20,14 +21,17 @@
     "@angular/compiler": "22.2.0",
     "@angular/core": "22.2.0",
     "@angular/platform-browser": "22.2.0",
-    "rxjs": "7.8.2"
+    "rxjs": "7.8.2",
+    "ws": "8.21.0"
   },
   "devDependencies": {
     "@angular/build": "22.2.0",
     "@angular/cli": "22.2.0",
     "@angular/compiler-cli": "22.2.0",
     "@playwright/test": "1.64.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "@types/ws": "8.18.1",
+    "@types/node": "24.10.0"
   },
   "type": "module"
 }
