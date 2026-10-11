@@ -110,3 +110,25 @@ test('acquisition ticks once regardless of browser subscriber count',async()=>{
   assert.ok(hub.metrics().sourceTicks<15);
  }finally{for(const ws of clients)ws.terminate();await hub.close();}
 });
+
+test('late subscriber sees expired cached GOOD as STALE, then fresh GOOD after update',async()=>{
+ const hub=createTagHub({demo:false,heartbeatMs:200,staleMs:80});
+ await new Promise<void>(resolve=>hub.http.listen(0,'127.0.0.1',resolve));
+ const address=hub.http.address();
+ if(!address||typeof address==='string')throw Error('No test address');
+ const url='ws://127.0.0.1:'+address.port+'/ws/tags';
+ const sockets:WebSocket[]=[];
+ try{
+  hub.publish({tagId:'Plant/Motor',value:1,quality:'GOOD',sequence:1});
+  await new Promise(resolve=>setTimeout(resolve,110));
+  const {ws,events}=await connect(url);sockets.push(ws);
+  ws.send(JSON.stringify({type:'subscribe',version:1,tags:['Plant/Motor']}));
+  const stale=await waitFor(events,e=>e.type==='sample'&&e.sample?.sequence===1);
+  assert.equal(stale.sample.quality,'STALE');
+  assert.equal(stale.sample.value,null);
+  hub.publish({tagId:'Plant/Motor',value:1,quality:'GOOD',sequence:2});
+  const live=await waitFor(events,e=>e.type==='sample'&&e.sample?.sequence===2);
+  assert.equal(live.sample.quality,'GOOD');
+  assert.equal(live.sample.value,1);
+ }finally{for(const ws of sockets)ws.terminate();await hub.close();}
+});

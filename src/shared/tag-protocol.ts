@@ -1,6 +1,8 @@
 /** CP-07 read-only protocol. No commands, dynamic code or arbitrary tag names. */
 export const WIRE_VERSION=1;
 export const MAX_TAGS=128;
+/** Shared end-to-end freshness contract, independent of transport heartbeat. */
+export const TAG_STALE_AFTER_MS=3000;
 export const VALID_TAG=/^[A-Za-z0-9_./:-]{1,160}$/;
 export type WireQuality='GOOD'|'UNCERTAIN'|'BAD'|'STALE';
 export interface WireSample{tagId:string;value:boolean|number|null;quality:WireQuality;sequence:number}

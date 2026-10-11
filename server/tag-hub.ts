@@ -1,6 +1,6 @@
 import {createServer,type Server} from 'node:http';
 import {WebSocketServer,WebSocket} from 'ws';
-import {parseSubscription,validSample,type WireSample,type ServerMessage} from '../src/shared/tag-protocol.ts';
+import {parseSubscription,validSample,TAG_STALE_AFTER_MS,type WireSample,type ServerMessage} from '../src/shared/tag-protocol.ts';
 const MAX_CLIENTS=64,MAX_BUFFERED=131072;
 const DEMO=['Plant/Motor','Plant/Gear','Plant/P1','Pump/Motor','Pump/Pressure'] as const;
 export interface TagHub {
@@ -11,16 +11,20 @@ export interface TagHub {
 }
 /** One source and one acquisition stream fan out across all browser subscribers. */
 export function createTagHub(opts:{
- allowedOrigins?:readonly string[];heartbeatMs?:number;sourceIntervalMs?:number;demo?:boolean;
+ allowedOrigins?:readonly string[];heartbeatMs?:number;sourceIntervalMs?:number;demo?:boolean;staleMs?:number;
 }={}):TagHub {
  const heartbeatMs=opts.heartbeatMs??1000;
  if(!Number.isInteger(heartbeatMs)||heartbeatMs<100)throw Error('Bad heartbeat');
+ const staleMs=opts.staleMs??TAG_STALE_AFTER_MS;
+ if(!Number.isInteger(staleMs)||staleMs<25||staleMs>60000)throw Error('Bad stale interval');
  const origins=new Set(opts.allowedOrigins??[
   'http://127.0.0.1:4200','http://localhost:4200',
   'http://127.0.0.1:8787','http://localhost:8787']);
  const clients=new Map<WebSocket,Set<string>>();
  const index=new Map<string,Set<WebSocket>>();
  const samples=new Map<string,WireSample>();
+ const sampleTimes=new Map<string,number>();
+ const MAX_SOURCE_TAGS=8192;
  const pong=new WeakMap<WebSocket,number>();
  let sourceTicks=0,droppedClients=0,closed=false;
  const http=createServer((req,res)=>{
@@ -46,7 +50,9 @@ export function createTagHub(opts:{
   if(closed||!validSample(sample))throw Error('Invalid sample or closed server');
   const prior=samples.get(sample.tagId);
   if(prior&&prior.sequence>=sample.sequence)return false;
+  if(!prior&&samples.size>=MAX_SOURCE_TAGS)throw Error('Source tag quota exceeded');
   samples.set(sample.tagId,{...sample});
+  sampleTimes.set(sample.tagId,Date.now());
   for(const ws of index.get(sample.tagId)??[])emit(ws,{type:'sample',sample});
   return true;
  }
@@ -75,7 +81,10 @@ export function createTagHub(opts:{
     if(!set){set=new Set();index.set(id,set);}set.add(ws);}
    emit(ws,{type:'subscribed',tags});
    for(const id of tags){
-    const sample=samples.get(id)??{tagId:id,value:null,quality:'STALE' as const,sequence:0};
+    const cached=samples.get(id);
+    const age=Date.now()-(sampleTimes.get(id)??0);
+    const sample:WireSample=!cached?{tagId:id,value:null,quality:'STALE',sequence:0}:
+      age>=staleMs?{...cached,value:null,quality:'STALE'}:cached;
     emit(ws,{type:'sample',sample});
    }
   });

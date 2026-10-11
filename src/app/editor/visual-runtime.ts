@@ -3,6 +3,7 @@
  * No timers, DOM access, JS evaluation, network, or implicit polling.
  */
 import type {Shape} from './document.ts';
+import {TAG_STALE_AFTER_MS} from '../../shared/tag-protocol.ts';
 import type {ProcessPart} from './process-graphics.ts';
 
 export type TagQuality='GOOD'|'UNCERTAIN'|'BAD'|'STALE';
@@ -11,7 +12,7 @@ export type PartEffect='fixed'|'state-color'|'hide-idle'|'spin-active';
 export interface PartRule {readonly partIndex:number;readonly effect:PartEffect;}
 export interface PartAppearance {readonly stroke:string;readonly visible:boolean;readonly spin:boolean;}
 /** Per-source timeout, not a polling period. Shared across all symbols. */
-export const STALE_AFTER_MS=3000;
+export const STALE_AFTER_MS=TAG_STALE_AFTER_MS;
 export interface TagSample {
   readonly tagId:string;
   readonly value:boolean|number|null;
