@@ -7,7 +7,7 @@
       <button type="button" (click)="redo()" [disabled]="!canRedo()" title="Redo (Ctrl+Y)">↷ Redo</button>
       <span class="separator"></span>
       @if(selected() && !previewMode()){
-        <button type="button" (click)="duplicateSelected()" title="Duplicate selected object (Ctrl+D)">⧉ Duplicate</button>
+        <button type="button" (click)="duplicateSelected()" aria-label="Duplicate selected object" title="Duplicate selected object (Ctrl+D)">⧉ Duplicate</button>
       }
       <button type="button" (click)="exportProject()">⇩ Export</button>
       <label class="file-label">⇧ Import <input type="file" accept="application/json,.json" (change)="importProject($event)" hidden></label>
@@ -17,7 +17,7 @@
 
   <div class="workspace" [class.runtime]="previewMode()">
     <aside class="sidebar">
-      <div class="pane-heading">PROJECT PAGES <button type="button" (click)="addPage()" title="New page">＋</button></div>
+      <div class="pane-heading">PROJECT PAGES <button type="button" (click)="addPage()" aria-label="New page" title="New page">＋</button></div>
       <div class="pages">
         @for(page of project().pages;track page.id){
           <button type="button" [class.active]="page.id===project().activePageId" (click)="selectPage(page.id)">
