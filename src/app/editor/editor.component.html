@@ -17,6 +17,38 @@
     </div>
   </header>
 
+  @if(symbolBuilderOpen()){
+    <section class="symbol-builder" role="dialog" aria-label="Create Dynamic Symbol" data-testid="symbol-builder">
+      <div class="symbol-builder-header">
+        <div><strong>Create Dynamic Symbol</strong>
+          <span>Line-based SVG · SP / DP · reusable in this project</span></div>
+        <button type="button" (click)="symbolBuilderOpen.set(false)" aria-label="Close Symbol Builder">✕</button>
+      </div>
+      <div class="symbol-builder-fields">
+        <label>Symbol name<input type="text" maxlength="80" aria-label="Dynamic symbol name"
+          [value]="symbolBuilderName()" (input)="symbolBuilderName.set($any($event.target).value)"></label>
+        <label>Moving blade
+          <select aria-label="Moving blade" [value]="symbolBuilderMoving()" (change)="chooseMovingBlade($event)">
+            @for(line of symbolBuilderLines();track line.id){
+              <option [value]="line.id">{{line.name}}</option>
+            }
+          </select>
+        </label>
+        <label>Pivot X<input type="number" aria-label="Pivot X" [value]="symbolBuilderPivotX()"
+          (change)="symbolBuilderPivotX.set(+$any($event.target).value)"></label>
+        <label>Pivot Y<input type="number" aria-label="Pivot Y" [value]="symbolBuilderPivotY()"
+          (change)="symbolBuilderPivotY.set(+$any($event.target).value)"></label>
+        <label>Open angle<input type="number" aria-label="Open angle"
+          min="-360" max="360" [value]="symbolBuilderOpenAngle()"
+          (change)="symbolBuilderOpenAngle.set(+$any($event.target).value)"></label>
+      </div>
+      <div class="symbol-builder-footer">
+        <span>Fixed lines stay in place; only the selected blade rotates about the pivot.</span>
+        <button type="button" (click)="symbolBuilderOpen.set(false)">Cancel</button>
+        <button type="button" class="primary" (click)="saveComposedSymbol()">Save to My Symbols</button>
+      </div>
+    </section>
+  }
   <div class="workspace" [class.runtime]="previewMode()">
     <aside class="sidebar">
       <div class="pane-heading">PROJECT PAGES <button type="button" (click)="addPage()" aria-label="New page" title="New page">＋</button></div>
@@ -68,6 +100,21 @@
         {{symbolVisible().length}} of {{symbolMatches().length}} matching SVGs
         · {{processGraphicTotal}} editable vector composites · FUXA/MIT
       </div>
+      <div class="symbol-my-heading">
+        <span>MY DYNAMIC SYMBOLS · {{(project().customSymbols??[]).length}}</span>
+        <label class="symbol-import">⇧ Import JSON
+          <input type="file" hidden accept=".json,application/json" (change)="importDynamicSymbol($event)">
+        </label>
+      </div>
+      @for(def of project().customSymbols??[];track def.id){
+        <button type="button" class="custom-symbol-item" draggable="true"
+          [attr.aria-label]="'Add custom '+def.name"
+          (dragstart)="startCustomSymbolDrag($event,def.id)" (click)="addCustomSymbol(def.id)">
+          <span aria-hidden="true">◢</span><span>{{def.name}}</span><span>＋</span>
+        </button>
+      } @empty {
+        <p class="custom-symbol-empty">Select line objects → Create Dynamic Symbol.</p>
+      }
       <div class="sidebar-tip">Click or drag symbols onto your HMI. Hold <b>Shift</b> to select multiple objects. Preview animation with the ▶ button.</div>
       <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
       <div class="layers">
@@ -363,8 +410,9 @@
             }
             @for(shape of activePage().shapes;track shape.id){
               <g class="canvas-node" [attr.data-shape-id]="shape.id"
-                [attr.data-visual-quality]="previewMode() && shape.kind==='symbol' && shape.tagId ? stateOf(shape)?.quality : null"
-                [attr.data-visual-status]="previewMode() && shape.kind==='symbol' && shape.tagId ? stateOf(shape)?.status : null"
+                [attr.data-visual-quality]="previewMode() && shape.kind==='symbol' && shape.tagId ? (dynamicState(shape)?.quality??stateOf(shape)?.quality) : null"
+                [attr.data-visual-status]="previewMode() && shape.kind==='symbol' && shape.tagId ? (dynamicState(shape)?.status??stateOf(shape)?.status) : null"
+                [attr.data-dynamic-state]="dynamicState(shape)?.state??null"
                 [attr.transform]="'translate('+displayX(shape)+','+displayY(shape)+')'"
                 (pointerdown)="beginDrag($event,shape)">
                 @switch(shape.kind){
@@ -394,7 +442,30 @@
                       [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
                   }
                   @case('symbol'){
-                    @if(processGraphic(shape.symbolId);as graphic){
+                    @if(dynamicSymbol(shape);as def){
+                      <svg class="dynamic-symbol" x="0" y="0"
+                        [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                        [attr.viewBox]="'0 0 '+def.viewBox[0]+' '+def.viewBox[1]"
+                        preserveAspectRatio="xMidYMid meet" [attr.data-symbol-id]="def.id">
+                        <rect x="0" y="0" [attr.width]="def.viewBox[0]"
+                          [attr.height]="def.viewBox[1]" fill="transparent" pointer-events="all"/>
+                        @for(part of def.parts;track part.id){
+                          <g [attr.data-part-id]="part.id"
+                            [class.dynamic-blade]="part.id===def.movingPartId"
+                            [class.dynamic-animated]="part.id===def.movingPartId && dynamicState(shape)?.animate"
+                            [style.transform]="part.id===def.movingPartId?
+                              'rotate('+(dynamicState(shape)?.angle??def.states.OPEN.angle)+'deg)':null"
+                            [style.transform-origin]="part.id===def.movingPartId?
+                              def.pivot[0]+'px '+def.pivot[1]+'px':null">
+                            <line [attr.x1]="part.from[0]" [attr.y1]="part.from[1]"
+                              [attr.x2]="part.to[0]" [attr.y2]="part.to[1]"
+                              stroke-linecap="round" [attr.stroke-width]="part.strokeWidth"
+                              [attr.stroke]="part.id===def.movingPartId?
+                                (dynamicState(shape)?.color??part.stroke):part.stroke"/>
+                          </g>
+                        }
+                      </svg>
+                    } @else if(processGraphic(shape.symbolId);as graphic){
                       <svg class="process-graphic" [class.process-pulse]="symbolAnimated(shape) && shape.animation==='pulse'"
                         [class.process-entire-spin]="symbolAnimated(shape) && shape.animation==='spin' && !graphic.hasRotor"
                         x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
@@ -431,7 +502,19 @@
                   }
                 }
                 @if(previewMode() && shape.kind==='symbol' && shape.tagId){
-                  @if(stateOf(shape);as visual){
+                  @if(dynamicState(shape);as dynamic){
+                    <g class="visual-quality-indicator" pointer-events="none">
+                      <circle [attr.cx]="displayWidth(shape)-5" cy="5" r="6"
+                        [attr.fill]="dynamic.color" stroke="#111e29" stroke-width="2"/>
+                      @if(dynamic.warning){
+                        <rect x="-4" y="-4" [attr.width]="displayWidth(shape)+8"
+                          [attr.height]="displayHeight(shape)+8" fill="none"
+                          [attr.stroke]="dynamic.color" stroke-width="2.5" stroke-dasharray="6 4"/>
+                        <text x="0" [attr.y]="displayHeight(shape)+21" [attr.fill]="dynamic.color"
+                          font-size="12" font-weight="600">{{dynamic.status}}</text>
+                      }
+                    </g>
+                  } @else if(stateOf(shape);as visual){
                     <g class="visual-quality-indicator" pointer-events="none">
                       <circle [attr.cx]="displayWidth(shape)-5" cy="5" r="6"
                         [attr.fill]="visual.stroke" stroke="#111e29" stroke-width="2"/>
@@ -502,6 +585,10 @@
         }
         <div class="inspector-section">
           <button type="button" class="danger" (click)="removeSelected()">Delete {{selectionCount()}} selected objects</button>
+          @if(symbolBuilderPossible()){
+            <button type="button" class="symbol-builder-action"
+              (click)="openSymbolBuilder()">Create Dynamic Symbol from Lines</button>
+          }
           <p class="helper">Undo restores all changes in one step.</p>
         </div>
       } @else if(selected();as shape){
@@ -529,7 +616,23 @@
           @if(shape.kind==='text'){
             <label>Text<input type="text" [value]="shape.text" maxlength="160" (change)="updateProperty('text',$event)"></label>
           }
-          @if(shape.kind==='symbol'){
+          @if(shape.kind==='symbol' && dynamicSymbol(shape);as dynamicDefinition){
+            <div class="dynamic-symbol-details">
+              <strong>STATEFUL SYMBOL</strong>
+              <p class="helper">One tag controls OPEN / CLOSED; quality and invalid values are shown explicitly.</p>
+              <label>Position encoding
+                <select aria-label="Position encoding" [value]="shape.pointMode??'double-point'"
+                  (change)="setPointMode(shape,$event)">
+                  <option value="single-point">Single point · 0 Open, 1 Closed</option>
+                  <option value="double-point">Double point · 0 Intermediate, 1 Open, 2 Closed, 3 Bad</option>
+                </select>
+              </label>
+              <button type="button" (click)="exportDynamicSymbol(shape)">⇩ Export symbol JSON</button>
+              <p class="helper">{{dynamicDefinition.parts.length}} SVG lines · one rotating blade · pivot
+                {{dynamicDefinition.pivot[0]}}, {{dynamicDefinition.pivot[1]}}</p>
+            </div>
+          }
+          @if(shape.kind==='symbol' && !dynamicSymbol(shape)){
             <p class="helper">
               @if(processGraphic(shape.symbolId);as definition){
                 Editable vector geometry: {{definition.parts.length}} SVG parts.
@@ -584,7 +687,7 @@
             </label>
           }
           <label>Tag identifier<input type="text" placeholder="Device/Tag" maxlength="160" [value]="shape.tagId" (change)="updateProperty('tagId',$event)"></label>
-          @if(shape.kind==='symbol' && shape.tagId){
+          @if(shape.kind==='symbol' && shape.tagId && !dynamicSymbol(shape)){
             <label>Visual activation rule
               <select aria-label="Visual activation rule" [value]="shape.visualRule??'when-true'"
                 (change)="updateProperty('visualRule',$event)">
