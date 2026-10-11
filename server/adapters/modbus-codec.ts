@@ -1,6 +1,6 @@
 /** Node binary decoder; planner/validation share the exact browser-safe CP-10 contract. */
 import {dataTypeOf,widthOf} from '../../src/shared/modbus-mapping.ts';
-export {validateModbusConfig,planReads,expectedDataBytes,validHost} from '../../src/shared/modbus-mapping.ts';
+export {validateModbusConfig,planReads,validHost} from '../../src/shared/modbus-mapping.ts';
 export type {ReadFunction,DataType,WordOrder,RegisterTag,ModbusConfig,ReadGroup} from '../../src/shared/modbus-mapping.ts';
 import type {ReadGroup,RegisterTag} from '../../src/shared/modbus-mapping.ts';
 export function expectedDataBytes(group:ReadGroup):number {
