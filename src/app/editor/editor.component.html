@@ -34,7 +34,34 @@
           </button>
         }
       </div>
-      <div class="sidebar-tip">Tip: click an object to edit. Hold <b>Shift</b> and click to select several objects, then align them in the right panel.</div>
+      <div class="pane-heading with-line">INDUSTRIAL SVG LIBRARY <span class="muted">{{symbolTotal}}</span></div>
+      <div class="symbol-filter">
+        <input type="search" aria-label="Search symbols" placeholder="Search pump, valve, motor..."
+          [value]="symbolSearch()" (input)="searchSymbol($event)">
+        <select aria-label="Symbol category" [value]="symbolCategory()" (change)="chooseSymbolCategory($event)">
+          @for(category of symbolCategories;track category){
+            <option [value]="category">{{category}}</option>
+          }
+        </select>
+      </div>
+      <div class="symbol-gallery" aria-label="SVG symbol library">
+        @for(symbol of symbolVisible();track symbol.id){
+          <button type="button" class="symbol-card" draggable="true"
+            [attr.aria-label]="'Add '+symbol.label+' SVG symbol'"
+            (dragstart)="startSymbolDrag($event,symbol.id)" (click)="addSymbol(symbol.id)"
+            [title]="'Click to add '+symbol.label+' or drag to canvas'">
+            <img [src]="symbol.href" [alt]="symbol.label" loading="lazy" width="35" height="35">
+            <span>{{symbol.label}}</span>
+          </button>
+        } @empty {
+          <p class="symbol-empty">No symbols match. Try another search or category.</p>
+        }
+      </div>
+      <div class="symbol-caption">
+        {{symbolVisible().length}} of {{symbolMatches().length}} matching SVGs
+        · FUXA/MIT · vector quality
+      </div>
+      <div class="sidebar-tip">Click or drag symbols onto your HMI. Hold <b>Shift</b> to select multiple objects. Preview animation with the ▶ button.</div>
       <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
       <div class="layers">
         @for(shape of activePage().shapes;track shape.id){
@@ -110,6 +137,12 @@
                       [attr.fill]="shape.fill" [attr.stroke]="shape.stroke" stroke-width="3" rx="3"/>
                     <path [attr.d]="'M 8 10 L '+(displayWidth(shape)-8)+' '+(displayHeight(shape)-10)"
                       [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
+                  }
+                  @case('symbol'){
+                    <image class="svg-library-symbol" [class.symbol-spin]="previewMode() && shape.animation==='spin'"
+                      [class.symbol-pulse]="previewMode() && shape.animation==='pulse'"
+                      x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                      preserveAspectRatio="xMidYMid meet" [attr.href]="symbolUrl(shape)"/>
                   }
                 }
                 @if(selectionLookup().has(shape.id) && !previewMode()){
@@ -187,6 +220,18 @@
           </div>
           @if(shape.kind==='text'){
             <label>Text<input type="text" [value]="shape.text" maxlength="160" (change)="updateProperty('text',$event)"></label>
+          }
+          @if(shape.kind==='symbol'){
+            <p class="helper">Vector source: FUXA SVG library (MIT). Original aspect ratio preserved.</p>
+            <label>Preview animation
+              <select aria-label="Symbol animation" [value]="shape.animation??'none'"
+                (change)="updateProperty('animation',$event)">
+                <option value="none">None (static)</option>
+                <option value="spin">Rotate smoothly</option>
+                <option value="pulse">Pulse softly</option>
+              </select>
+            </label>
+            <p class="helper">Animation runs in Preview mode only. No live status binding yet.</p>
           }
         </div>
         <div class="inspector-section">

@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener,
   ViewChild, computed, signal } from '@angular/core';
 import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
-  newShape, insertShape, editShape, deleteShape, createPage } from './document';
+  newShape, newSymbol, insertShape, editShape, deleteShape, createPage } from './document';
+import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } from './actions';
 import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align, type Axis } from './selection-ops';
 
@@ -35,6 +36,12 @@ export class EditorComponent {
     this.activePage().shapes.find(s=>s.id===this.selectedId())??null);
   readonly preview=signal<DragPreview|null>(null);
   readonly dragOffsets=signal<Record<string,{x:number;y:number}>>({});
+  readonly symbolSearch=signal('');
+  readonly symbolCategory=signal<SymbolCategory>('All');
+  readonly symbolCategories=SYMBOL_CATEGORIES;
+  readonly symbolTotal=HMI_SYMBOLS.length;
+  readonly symbolMatches=computed(()=>filterSymbols(this.symbolSearch(),this.symbolCategory()));
+  readonly symbolVisible=computed(()=>this.symbolMatches().slice(0,24));
   readonly palette:{kind:ShapeKind;label:string;glyph:string}[]=[
     {kind:'rect',label:'Rectangle',glyph:'▭'},
     {kind:'ellipse',label:'Ellipse',glyph:'◯'},
@@ -169,18 +176,23 @@ export class EditorComponent {
     if(event.dataTransfer) event.dataTransfer.effectAllowed='copy';
   }
   allowPaletteDrop(event:DragEvent):void {
-    if(event.dataTransfer?.types.includes('application/x-web-hmi-shape')){
+    if(event.dataTransfer?.types.includes('application/x-web-hmi-shape') ||
+      event.dataTransfer?.types.includes('application/x-web-hmi-symbol')){
       event.preventDefault();
       event.dataTransfer.dropEffect='copy';
     }
   }
   dropPaletteShape(event:DragEvent):void {
     const kind=event.dataTransfer?.getData('application/x-web-hmi-shape');
-    if(!kind || !this.palette.some(tool=>tool.kind===kind) || this.previewMode())return;
+    const symbolId=event.dataTransfer?.getData('application/x-web-hmi-symbol');
+    if(this.previewMode())return;
+    if(!symbolId && (!kind||!this.palette.some(tool=>tool.kind===kind)))return;
+    if(symbolId && !findSymbol(symbolId))return;
     event.preventDefault();
     const point=this.pointerToCanvas(event);
     if(!point)return;
-    const shape=newShape(kind as ShapeKind,this.activePage().shapes.length);
+    const shape=symbolId?newSymbol(symbolId,this.activePage().shapes.length):
+      newShape(kind as ShapeKind,this.activePage().shapes.length);
     const placed={...shape,
       x:this.round(Math.max(0,Math.min(1200-shape.width,point.x-shape.width/2))),
       y:this.round(Math.max(0,Math.min(700-shape.height,point.y-shape.height/2)))};
@@ -191,6 +203,32 @@ export class EditorComponent {
     }catch(error){this.status.set(String(error));}
   }
 
+  symbolUrl(shape:Shape):string{
+    return findSymbol(shape.symbolId??'')?.href??'';
+  }
+  searchSymbol(event:Event):void{
+    this.symbolSearch.set((event.target as HTMLInputElement).value);
+  }
+  chooseSymbolCategory(event:Event):void{
+    const category=(event.target as HTMLSelectElement).value;
+    if(this.symbolCategories.some(item=>item===category))
+      this.symbolCategory.set(category as SymbolCategory);
+  }
+  addSymbol(symbolId:string):void{
+    if(this.previewMode())return;
+    try{
+      const symbol=newSymbol(symbolId,this.activePage().shapes.length);
+      this.record(insertShape(this.project(),symbol));
+      this.selectOnly(symbol.id);
+      this.status.set('SVG symbol added · resize, bind a tag, or enable preview animation');
+    }catch(error){this.status.set(String(error));}
+  }
+  startSymbolDrag(event:DragEvent,symbolId:string):void{
+    if(this.previewMode())return;
+    if(!findSymbol(symbolId))return;
+    event.dataTransfer?.setData('application/x-web-hmi-symbol',symbolId);
+    if(event.dataTransfer)event.dataTransfer.effectAllowed='copy';
+  }
   removeSelected():void{
     if(!this.selectionCount()||this.previewMode())return;
     this.record(deleteObjects(this.project(),this.selectedIds()));
