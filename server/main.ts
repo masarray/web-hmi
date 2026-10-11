@@ -6,19 +6,21 @@ const port=Number(process.env['HMI_PORT']??8787);
 if(!Number.isInteger(port)||port<1||port>65535)throw Error('Bad HMI_PORT');
 const custom=process.env['HMI_ALLOWED_ORIGIN'];
 const adapterConfig=modbusFromEnvironment(process.env);
+const activeSource=adapterConfig?
+ (process.env['HMI_SOURCE']==='modbus-tcp'?'MODBUS_TCP':'MODBUS_LAB'):'DEMO';
 const hub=createTagHub({
- demo:adapterConfig===null,source:adapterConfig?'MODBUS_LAB':'DEMO',
+ demo:adapterConfig===null,source:activeSource,
  allowedOrigins:custom?[custom,'http://127.0.0.1:8787','http://localhost:8787']:undefined
 });
 const adapter=adapterConfig?new ModbusTcpReadAdapter(adapterConfig,
  sample=>{hub.publish(sample);},
- state=>console.log(JSON.stringify({source:'MODBUS_LAB',health:state}))
+ state=>console.log(JSON.stringify({source:activeSource,health:state}))
 ):null;
 hub.http.listen(port,'127.0.0.1',()=>{
  adapter?.start();
  console.log(JSON.stringify({status:'listening',url:'http://127.0.0.1:'+port,
   ws:'ws://127.0.0.1:'+port+'/ws/tags',
-  source:adapter?'MODBUS_LAB':'DEMO',readOnly:true}));
+  source:activeSource,readOnly:true}));
 });
 let shuttingDown=false;
 for(const sig of ['SIGINT','SIGTERM'] as const)

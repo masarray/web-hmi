@@ -150,3 +150,53 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 .stream-status{font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px;border:1px solid #a47f52;border-radius:3px;color:#f1dcb7}
 .stream-status[data-state=connected]{border-color:#68bca2;color:#94e3c5}
 .stream-help{font-size:10px;color:#b5a68c}
+
+/* CP-10: focused engineering workspace, independent of graphical canvas layout. */
+.center{position:relative}
+.top-actions button.on{background:#28536a;border-color:#58a5ca;color:#e6f7ff}
+.mapping-panel{position:absolute;inset:0;z-index:12;background:#10202b;display:flex;
+ flex-direction:column;min-height:0;overflow:auto;border-right:1px solid #355065;
+ color:#dae9f1;font-size:12px}
+.mapping-head{display:flex;align-items:center;justify-content:space-between;
+ padding:16px 18px 11px;gap:12px;background:#192e3b;border-bottom:1px solid #335264}
+.mapping-head strong{display:block;font-size:16px;color:#e6f6fb;margin-bottom:5px}
+.mapping-head span,.mapping-hint,.mapping-status{font-size:11px;color:#93b0bf;line-height:1.5}
+.mapping-hint{padding:10px 18px;background:#152a37;border-bottom:1px solid #2c4555}
+.mapping-device{display:grid;grid-template-columns:minmax(180px,2fr) repeat(4,minmax(88px,1fr));
+ gap:9px;padding:12px 18px}
+.mapping-device label{font-size:10px;color:#9eb6c4}
+.mapping-device input,.mapping-actions input,.mapping-table input,.mapping-table select{
+ display:block;width:100%;min-width:0;margin-top:5px;padding:7px 8px;background:#0b1923;
+ color:#deeff7;border:1px solid #385365;border-radius:4px;font-size:11px}
+.mapping-device input:focus,.mapping-table input:focus,.mapping-table select:focus{
+ outline:2px solid #4b9cc0;outline-offset:1px}
+.mapping-actions{display:flex;align-items:center;gap:7px;padding:0 18px 10px;flex-wrap:wrap}
+.mapping-actions input{margin:0;min-width:180px;flex:1}
+.mapping-actions button,.mapping-import,.mapping-more{border:1px solid #426479;
+ background:#234153;color:#d0ecf8;border-radius:4px;padding:7px 10px;font-size:11px}
+.mapping-import{cursor:pointer}
+.mapping-table-wrap{overflow:auto;flex:1;min-height:80px;margin:0 18px;border:1px solid #344b5a}
+.mapping-table{border-collapse:collapse;width:100%;min-width:650px}
+.mapping-table th,.mapping-table td{border-bottom:1px solid #263b49;padding:6px 7px;text-align:left}
+.mapping-table th{position:sticky;top:0;background:#223845;color:#a4c0cd;font-size:10px;z-index:1}
+.mapping-table td:nth-child(1){min-width:165px}
+.mapping-table td:nth-child(2){min-width:138px}
+.mapping-table td:nth-child(3){width:106px}
+.mapping-table td:nth-child(4){width:100px}
+.mapping-table td:nth-child(5){width:95px}
+.mapping-table input,.mapping-table select{margin:0}
+.mapping-table select:disabled{opacity:.35}
+.mapping-table button{padding:5px 7px;color:#e49fa6}
+.mapping-more{margin:8px 18px;align-self:flex-start}
+.mapping-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;
+ padding:9px 18px;background:#173c37;color:#a3e6d4;font-size:11px}
+.mapping-summary.invalid{background:#4c292d;color:#ffbdc4}
+.mapping-summary span{font-size:10px}
+.mapping-status{padding:7px 18px;margin:0}
+.mapping-plan{padding:8px 18px 14px;color:#a4bfcc;font-size:11px}
+.mapping-plan summary{cursor:pointer;margin-bottom:7px}
+.mapping-plan div{padding:3px 0}
+@media(max-width:1120px){
+ .mapping-device{grid-template-columns:repeat(3,minmax(120px,1fr))}
+ .mapping-summary{flex-direction:column;align-items:flex-start}
+}
