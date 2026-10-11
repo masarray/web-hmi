@@ -2,8 +2,7 @@ import {test,expect} from '@playwright/test';
 
 test('CB rotating responds to IEC double-point with distinct visual states and safe quality',async({page})=>{
   await page.goto('/');
-  await page.getByRole('searchbox',{name:'Search symbols'}).fill('CB Rotating');
-  await page.getByRole('button',{name:'Add CB Rotating (SP / DP) SVG symbol'}).click();
+  await page.getByRole('button',{name:'Add dynamic CB Rotating'}).click();
   const cb=page.locator('g.canvas-node').last();
   await expect(cb.locator('svg.dynamic-symbol')).toBeVisible();
   await page.getByLabel('Tag identifier').fill('BayA/XCBR1.Pos.stVal');
