@@ -2,6 +2,7 @@
 import {findSymbol} from './symbols.ts';
 import type {VisualRule,PartRule} from './visual-runtime.ts';
 import {findProcessGraphic} from './process-graphics.ts';
+import {parseDynamicSymbol,findDynamicSymbol,type DynamicSymbol,type PointMode} from './dynamic-symbol.ts';
 export type AnimationMode='none'|'spin'|'pulse';
 export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'text' | 'breaker' | 'symbol';
 export interface Shape {
@@ -15,14 +16,18 @@ export interface Shape {
   threshold?:number;
   /** Optional behavior overrides for indexed parts of an allowlisted inline SVG. */
   partRules?:PartRule[];
+  pointMode?:PointMode;
 }
 export interface Page { id:string; name:string; shapes:Shape[] }
 export interface Project {
   schemaVersion:1; id:string; name:string; activePageId:string; pages:Page[];
+  /** Optional for v1 compatibility; imported symbol geometry travels with project. */
+  customSymbols?:DynamicSymbol[];
 }
 const kinds:ReadonlySet<string> = new Set(['rect','ellipse','line','text','breaker','symbol']);
 const idPattern=/^[A-Za-z0-9_-]{1,80}$/;
 const hex=/^#[0-9a-fA-F]{6}$/;
+const customSymbolId=/^user-[A-Za-z0-9_-]{1,64}$/;
 const finite=(v:unknown,min:number,max:number):v is number=>
   typeof v==='number' && Number.isFinite(v) && v>=min && v<=max;
 const named=(v:unknown,max:number):v is string=>
@@ -57,13 +62,27 @@ export function isShape(v:unknown):v is Shape {
     typeof v.text==='string' && v.text.length<=160 &&
     typeof v.tagId==='string' && v.tagId.length<=160 &&
     (v.symbolId===undefined ||
-      (typeof v.symbolId==='string' && !!findSymbol(v.symbolId))) &&
-    (v.kind!=='symbol'||(typeof v.symbolId==='string'&&!!findSymbol(v.symbolId))) &&
+      (typeof v.symbolId==='string' && (!!findSymbol(v.symbolId)||customSymbolId.test(v.symbolId)))) &&
+    (v.kind!=='symbol'||(typeof v.symbolId==='string'&&
+      (!!findSymbol(v.symbolId)||customSymbolId.test(v.symbolId)))) &&
     (v.animation===undefined||
       v.animation==='none'||v.animation==='spin'||v.animation==='pulse') &&
     (v.visualRule===undefined||v.visualRule==='when-true'||v.visualRule==='at-least') &&
     (v.threshold===undefined||finite(v.threshold,-1000000,1000000)) &&
-    (v.partRules===undefined||validPartRules(v.partRules,v.symbolId));
+    (v.partRules===undefined||validPartRules(v.partRules,v.symbolId)) &&
+    (v.pointMode===undefined||v.pointMode==='single-point'||v.pointMode==='double-point');
+}
+function valueSymbols(value:unknown):DynamicSymbol[] {
+  if(value===undefined)return [];
+  if(!Array.isArray(value)||value.length>128)throw Error('Invalid custom symbol catalog');
+  const seen=new Set<string>();
+  return value.map(raw=>{
+    const def=parseDynamicSymbol(raw);
+    if(!customSymbolId.test(def.id)||seen.has(def.id)||!!findSymbol(def.id))
+      throw Error('Duplicate or reserved custom symbol identifier');
+    seen.add(def.id);
+    return def;
+  });
 }
 export function parseProject(v:unknown):Project {
   if (!obj(v) || v.schemaVersion!==1 || !named(v.id,80) ||
@@ -71,6 +90,8 @@ export function parseProject(v:unknown):Project {
       !Array.isArray(v.pages) || v.pages.length<1 || v.pages.length>64 ||
       typeof v.activePageId!=='string')
     throw new Error('Invalid or unsupported HMI project format');
+  const customSymbols:DynamicSymbol[]=valueSymbols(v.customSymbols);
+  const customIds=new Set(customSymbols.map(s=>s.id));
   const pageIds=new Set<string>();
   const pages:Page[]=v.pages.map((raw:unknown)=>{
     if (!obj(raw) || typeof raw.id!=='string' ||
@@ -80,7 +101,9 @@ export function parseProject(v:unknown):Project {
     pageIds.add(raw.id);
     const shapeIds=new Set<string>();
     const shapes:Shape[]=raw.shapes.map((s:unknown)=>{
-      if (!isShape(s) || shapeIds.has(s.id))
+      if (!isShape(s) || shapeIds.has(s.id)||
+        (s.kind==='symbol'&&typeof s.symbolId==='string'&&
+          customSymbolId.test(s.symbolId)&&!customIds.has(s.symbolId)))
         throw new Error('Invalid or duplicate HMI shape');
       shapeIds.add(s.id);
       return {id:s.id,kind:s.kind,name:s.name,x:s.x,y:s.y,
@@ -90,6 +113,7 @@ export function parseProject(v:unknown):Project {
         ...(s.animation!==undefined?{animation:s.animation}:{}),
         ...(s.visualRule!==undefined?{visualRule:s.visualRule}:{}),
         ...(s.threshold!==undefined?{threshold:s.threshold}:{}),
+        ...(s.pointMode!==undefined?{pointMode:s.pointMode}:{}),
         ...(s.partRules!==undefined?{
           partRules:s.partRules.map(rule=>({partIndex:rule.partIndex,effect:rule.effect}))
         }:{})};
@@ -97,7 +121,8 @@ export function parseProject(v:unknown):Project {
     return {id:raw.id,name:raw.name,shapes};
   });
   if (!pageIds.has(v.activePageId)) throw new Error('Active page not found');
-  return {schemaVersion:1,id:v.id,name:v.name,activePageId:v.activePageId,pages};
+  return {schemaVersion:1,id:v.id,name:v.name,activePageId:v.activePageId,pages,
+    ...(v.customSymbols!==undefined?{customSymbols}:{})};
 }
 export function initialProject():Project {
   const shape=(id:string,kind:ShapeKind,name:string,x:number,y:number,
@@ -136,7 +161,7 @@ export function newSymbol(symbolId:string,count:number):Shape {
   if(!symbol)throw new Error('Unknown symbol identifier');
   return {...newShape('rect',count),kind:'symbol',name:symbol.label,
     symbolId:symbol.id,width:86,height:86,fill:'#30536e',stroke:'#84c8dc',
-    animation:'none'};
+    animation:'none',...(findDynamicSymbol(symbolId)?{pointMode:'double-point' as const}:{})};
 }
 export function insertShape(p:Project,s:Shape):Project {
   if (!isShape(s)) throw new Error('Invalid shape');
@@ -146,7 +171,7 @@ export function insertShape(p:Project,s:Shape):Project {
   return {...p,pages:p.pages.map(page=>page.id===p.activePageId?
     {...page,shapes:[...page.shapes,s]}:page)};
 }
-export type ShapeEdit=Partial<Pick<Shape,'name'|'x'|'y'|'width'|'height'|'fill'|'stroke'|'text'|'tagId'|'animation'|'visualRule'|'threshold'|'partRules'>>;
+export type ShapeEdit=Partial<Pick<Shape,'name'|'x'|'y'|'width'|'height'|'fill'|'stroke'|'text'|'tagId'|'animation'|'visualRule'|'threshold'|'partRules'|'pointMode'>>;
 export function editShape(p:Project,id:string,edit:ShapeEdit):Project {
   return {...p,pages:p.pages.map(page=>page.id===p.activePageId?
     {...page,shapes:page.shapes.map(s=>{
