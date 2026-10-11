@@ -82,6 +82,8 @@ test('unknown tag is STALE; unauthorized origin and writes are rejected',async()
   assert.equal(status.sample.quality,'STALE');
   ws.send(JSON.stringify({type:'write',tagId:'Unknown/Tag',value:1}));
   await once(ws,'close');
+  for(let retry=0;retry<50&&hub.metrics().clients!==0;retry++)
+    await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal(hub.metrics().clients,0);
   const denied=new WebSocket(url,{origin:'https://malicious.example'});
   const [error]=await once(denied,'error');
