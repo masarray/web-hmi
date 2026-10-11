@@ -3,7 +3,6 @@ import {MAX_TAGS,VALID_TAG,validSample,type WireSample,
 export type StreamStatus='disconnected'|'connecting'|'connected'|'reconnecting';
 export interface TagStreamHooks {
  onStatus:(status:StreamStatus)=>void;
- onSource?:(source:'DEMO'|'MODBUS_LAB')=>void;
  onReset:()=>void;
  onSample:(sample:WireSample,receivedAtMs:number)=>void;
 }
@@ -78,11 +77,10 @@ export class TagStreamClient {
    catch{ws.close(1002,'Malformed message');return;}
    if(!message||typeof message!=='object'){ws.close(1002);return;}
    if(message.type==='hello'){
-    if(message.version!==1||(message.source!=='DEMO'&&message.source!=='MODBUS_LAB')){
+    if(message.version!==1||message.source!=='DEMO'){
      ws.close(1002,'Unsupported stream');return;
     }
     this.handshaken=true;this.lastServerMessage=Date.now();
-    this.hooks.onSource?.(message.source);
     this.subscribe();return;
    }
    if(!this.handshaken)return;

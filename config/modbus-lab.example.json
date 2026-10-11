@@ -1,0 +1,14 @@
+{
+  "host": "127.0.0.1",
+  "port": 15020,
+  "unitId": 1,
+  "pollMs": 1000,
+  "requestTimeoutMs": 800,
+  "tags": [
+    {"tagId":"Plant/Run","functionCode":1,"address":0,"dataType":"bool"},
+    {"tagId":"Plant/Trip","functionCode":2,"address":7,"dataType":"bool"},
+    {"tagId":"Plant/Temperature","functionCode":3,"address":20,"dataType":"int16"},
+    {"tagId":"Plant/Energy","functionCode":3,"address":21,"dataType":"uint32","wordOrder":"ABCD"},
+    {"tagId":"Plant/Power","functionCode":4,"address":30,"dataType":"float32","wordOrder":"CDAB"}
+  ]
+}

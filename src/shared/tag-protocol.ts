@@ -8,7 +8,7 @@ export type WireQuality='GOOD'|'UNCERTAIN'|'BAD'|'STALE';
 export interface WireSample{tagId:string;value:boolean|number|null;quality:WireQuality;sequence:number}
 export type ClientMessage={type:'subscribe';version:1;tags:string[]};
 export type ServerMessage=
- |{type:'hello';version:1;source:'DEMO'|'MODBUS_LAB';heartbeatMs:number}
+ |{type:'hello';version:1;source:'DEMO';heartbeatMs:number}
  |{type:'subscribed';tags:string[]}
  |{type:'sample';sample:WireSample}
  |{type:'heartbeat';serverTime:number};

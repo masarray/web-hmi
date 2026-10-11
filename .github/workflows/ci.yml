@@ -31,6 +31,8 @@ jobs:
         run: npm test
       - name: Typecheck
         run: npm run typecheck
+      - name: Validate sample Modbus mapping (offline)
+        run: npm run check:modbus -- modbus-lab.example.json
       - name: Typecheck tag server
         run: npm run typecheck:server
       - name: Production build

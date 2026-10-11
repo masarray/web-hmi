@@ -99,7 +99,7 @@
       </div>
       @if(previewMode()){
         <div class="simulation-bar" data-testid="simulation-bar">
-          <strong>{{previewSource()==='local'?'SIMULATION ONLY':serverKind()==='MODBUS_LAB'?'MODBUS LAB · READ ONLY':'SERVER DEMO · READ ONLY'}}</strong>
+          <strong>{{previewSource()==='local'?'SIMULATION ONLY':'SERVER DEMO · READ ONLY'}}</strong>
           <label>Data source
             <select aria-label="Preview data source" [value]="previewSource()"
               (change)="choosePreviewSource($event)">

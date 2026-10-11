@@ -11,7 +11,8 @@
     "check": "npm test && npm run typecheck && npm run build && npm run test:e2e",
     "start:server": "node --experimental-strip-types server/main.ts",
     "typecheck:server": "tsc -p tsconfig.server.json",
-    "test:server": "node --experimental-strip-types --test tests/server*.test.ts"
+    "test:server": "node --experimental-strip-types --test tests/server*.test.ts",
+    "check:modbus": "node --experimental-strip-types server/check-modbus-config.ts"
   },
   "engines": {
     "node": ">=22.22.3"
