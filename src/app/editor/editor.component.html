@@ -38,8 +38,8 @@
       <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
       <div class="layers">
         @for(shape of activePage().shapes;track shape.id){
-          <button type="button" [class.active]="selectedIds().includes(shape.id)"
-            [attr.aria-pressed]="selectedIds().includes(shape.id)"
+          <button type="button" [class.active]="selectionLookup().has(shape.id)"
+            [attr.aria-pressed]="selectionLookup().has(shape.id)"
             (click)="selectFromEvent(shape.id,$event)">
             <span class="layer-icon">◇</span><span class="ellipsize">{{shape.name}}</span>
             @if(shape.tagId){<span class="tag-mark" title="Has tag metadata">T</span>}
@@ -53,7 +53,7 @@
         <span class="mode-pill">◇ SVG EDITOR</span>
         <span class="hint">Shift+click: multi-select · drag selection to move · Ctrl+A: select all</span>
         <span class="grow"></span>
-        <button type="button" (click)="selectAll()" title="Select all objects (Ctrl+A)">Select all</button>
+        <button type="button" (click)="selectAll()" aria-label="Select all objects (Ctrl+A)" title="Select all objects (Ctrl+A)">Select all</button>
         @if(selectionCount()>0){
           <span class="selection-pill">{{selectionCount()}} selected</span>
         }
@@ -112,7 +112,7 @@
                       [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
                   }
                 }
-                @if(selectedIds().includes(shape.id) && !previewMode()){
+                @if(selectionLookup().has(shape.id) && !previewMode()){
                   <rect x="-6" y="-6" [attr.width]="displayWidth(shape)+12" [attr.height]="displayHeight(shape)+12"
                     fill="none" stroke="#ffca74" stroke-width="1.8" stroke-dasharray="5 4"
                     pointer-events="none"/>

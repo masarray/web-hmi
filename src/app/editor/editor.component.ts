@@ -21,6 +21,7 @@ export class EditorComponent {
   readonly selectedIds=signal<string[]>([]);
   readonly selectedId=computed(()=>this.selectedIds().length===1?this.selectedIds()[0]??null:null);
   readonly selectionCount=computed(()=>this.selectedIds().length);
+  readonly selectionLookup=computed(()=>new Set(this.selectedIds()));
   readonly snapEnabled=signal(true);
   readonly gridVisible=signal(true);
   readonly previewMode=signal(false);
