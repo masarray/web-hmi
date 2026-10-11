@@ -103,10 +103,13 @@ export class ModbusTcpReadAdapter implements ReadOnlyAdapter {
  private delay:ReturnType<typeof setTimeout>|null=null;
  private waitDone:(()=>void)|null=null;
  private loop:Promise<void>|null=null;
- constructor(config:ModbusConfig,private readonly emit:SampleSink,
-   private readonly health:HealthSink=()=>{}) {
+ private readonly emit:SampleSink;
+ private readonly health:HealthSink;
+ constructor(config:ModbusConfig,emit:SampleSink,health:HealthSink=()=>{}) {
   this.config=validateModbusConfig(config);
   this.reads=planReads(this.config.tags);
+  this.emit=emit;
+  this.health=health;
  }
  status():AdapterHealth{return this.state;}
  private setState(state:AdapterHealth):void {
