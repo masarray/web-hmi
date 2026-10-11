@@ -62,9 +62,9 @@ export function isShape(v:unknown):v is Shape {
     typeof v.text==='string' && v.text.length<=160 &&
     typeof v.tagId==='string' && v.tagId.length<=160 &&
     (v.symbolId===undefined ||
-      (typeof v.symbolId==='string' && (!!findSymbol(v.symbolId)||customSymbolId.test(v.symbolId)))) &&
+      (typeof v.symbolId==='string' && (!!findSymbol(v.symbolId)||!!findDynamicSymbol(v.symbolId)||customSymbolId.test(v.symbolId)))) &&
     (v.kind!=='symbol'||(typeof v.symbolId==='string'&&
-      (!!findSymbol(v.symbolId)||customSymbolId.test(v.symbolId)))) &&
+      (!!findSymbol(v.symbolId)||!!findDynamicSymbol(v.symbolId)||customSymbolId.test(v.symbolId)))) &&
     (v.animation===undefined||
       v.animation==='none'||v.animation==='spin'||v.animation==='pulse') &&
     (v.visualRule===undefined||v.visualRule==='when-true'||v.visualRule==='at-least') &&
@@ -78,7 +78,7 @@ function valueSymbols(value:unknown):DynamicSymbol[] {
   const seen=new Set<string>();
   return value.map(raw=>{
     const def=parseDynamicSymbol(raw);
-    if(!customSymbolId.test(def.id)||seen.has(def.id)||!!findSymbol(def.id))
+    if(!customSymbolId.test(def.id)||seen.has(def.id)||!!findSymbol(def.id)||!!findDynamicSymbol(def.id))
       throw Error('Duplicate or reserved custom symbol identifier');
     seen.add(def.id);
     return def;
@@ -157,11 +157,11 @@ export function newShape(kind:ShapeKind,count:number):Shape {
     text:kind==='text'?'New label':'',tagId:''};
 }
 export function newSymbol(symbolId:string,count:number):Shape {
-  const symbol=findSymbol(symbolId);
-  if(!symbol)throw new Error('Unknown symbol identifier');
-  return {...newShape('rect',count),kind:'symbol',name:symbol.label,
-    symbolId:symbol.id,width:86,height:86,fill:'#30536e',stroke:'#84c8dc',
-    animation:'none',...(findDynamicSymbol(symbolId)?{pointMode:'double-point' as const}:{})};
+  const symbol=findSymbol(symbolId),dynamic=findDynamicSymbol(symbolId);
+  if(!symbol&&!dynamic)throw new Error('Unknown symbol identifier');
+  return {...newShape('rect',count),kind:'symbol',name:symbol?.label??dynamic!.name,
+    symbolId,width:86,height:86,fill:'#30536e',stroke:'#84c8dc',
+    animation:'none',...(dynamic?{pointMode:'double-point' as const}:{})};
 }
 export function insertShape(p:Project,s:Shape):Project {
   if (!isShape(s)) throw new Error('Invalid shape');
