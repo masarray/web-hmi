@@ -5,6 +5,7 @@ import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
 import {TagStreamClient,type StreamStatus} from './tag-stream-client';
+import {qualifiedTag,validateFleet,type FleetDevice} from '../../shared/device-fleet.ts';
 import {validateModbusConfig,planReads,widthOf,dataTypeOf,
   type ModbusConfig,type RegisterTag,type ReadFunction,
   type DataType,type WordOrder} from '../../shared/modbus-mapping.ts';
@@ -16,6 +17,19 @@ import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align
 
 const STORAGE_KEY='web-hmi.project.v1';
 const MODBUS_KEY='web-hmi.modbus-map.v1';
+const FLEET_KEY='web-hmi.fleet.v1';
+const MAX_FLEET_BYTES=524288;
+interface FleetSummary {
+ revision:number;busy:boolean;
+ devices:(FleetDevice & {health:string;diagnostics?:DeviceDiagnosticsView|null})[];
+}
+function restoreFleetDraft():FleetDevice[]{
+ try{
+  const raw=localStorage.getItem(FLEET_KEY);
+  if(raw&&raw.length<=MAX_FLEET_BYTES)return [...validateFleet(JSON.parse(raw)).devices];
+ }catch{/* Ignore invalid browser-only draft; never connect automatically. */}
+ return [{id:'PLC1',name:'PLC 1',config:defaultMapping()}];
+}
 const MAX_MAPPING_BYTES=131072;
 type MappingField='tagId'|'functionCode'|'address'|'dataType'|'wordOrder';
 type DeviceField='host'|'port'|'unitId'|'pollMs'|'requestTimeoutMs';
@@ -104,6 +118,26 @@ export class EditorComponent implements OnDestroy {
   readonly preview=signal<DragPreview|null>(null);
   readonly dragOffsets=signal<Record<string,{x:number;y:number}>>({});
   readonly mappingOpen=signal(false);
+  readonly fleetMode=signal(false);
+  readonly fleetDraft=signal<FleetDevice[]>(restoreFleetDraft());
+  readonly fleetSelected=signal<string>('PLC1');
+  readonly fleetRevision=signal<number|null>(null);
+  readonly selectedFleetName=computed(()=>this.fleetDraft().find(d=>d.id===this.fleetSelected())?.name??'');
+  readonly fleetBusy=signal(false);
+  readonly fleetStatus=signal('Add PLCs and configure their tags');
+  readonly fleetHealth=signal<FleetSummary['devices']>([]);
+  readonly fleetValidation=computed(()=>{
+    try{return {ok:true,problem:'',fleet:validateFleet({devices:this.fleetDraft()})};}
+    catch(error){return {ok:false,problem:error instanceof Error?error.message:String(error),
+      fleet:null};}
+  });
+  readonly availableMappingTags=computed(()=>{
+    if(this.fleetMode())return this.fleetDraft().flatMap(dev=>
+      dev.config.tags.map(tag=>({id:qualifiedTag(dev.id,tag.tagId),
+        label:dev.name+' / '+tag.tagId})));
+    return this.mappingDraft().tags.map(tag=>({
+      id:tag.tagId,label:tag.tagId+' · FC'+tag.functionCode+' @ '+tag.address}));
+  });
   readonly mappingDraft=signal<ModbusConfig>(restoreMapping());
   readonly mappingSearch=signal('');
   readonly mappingLimit=signal(40);
@@ -160,6 +194,104 @@ export class EditorComponent implements OnDestroy {
     this.mappingOpen.update(open=>!open);
     if(!this.mappingOpen())this.stopDeviceMonitor();
   }
+  switchDeviceMode(multi:boolean):void{
+    if(this.fleetMode()===multi)return;
+    this.fleetMode.set(multi);
+    this.mappingSearch.set('');
+    this.mappingLimit.set(40);
+    if(multi)this.selectFleetDevice(this.fleetDraft()[0]?.id??'');
+    else this.mappingDraft.set(restoreMapping());
+  }
+  selectFleetDevice(id:string):void{
+    const device=this.fleetDraft().find(d=>d.id===id);
+    this.fleetSelected.set(device?.id??'');
+    this.mappingDraft.set(device?.config??defaultMapping());
+    this.mappingSearch.set('');
+  }
+  addFleetDevice():void{
+    if(this.fleetDraft().length>=16){this.fleetStatus.set('Maximum 16 PLCs');return;}
+    const used=new Set(this.fleetDraft().map(d=>d.id));
+    let n=1;while(used.has('PLC'+n))n++;
+    const newDevice:FleetDevice={id:'PLC'+n,name:'PLC '+n,config:defaultMapping()};
+    this.saveFleetDraft([...this.fleetDraft(),newDevice]);
+    this.selectFleetDevice(newDevice.id);
+  }
+  deleteFleetDevice():void{
+    const id=this.fleetSelected();
+    const next=this.fleetDraft().filter(d=>d.id!==id);
+    this.saveFleetDraft(next);
+    this.selectFleetDevice(next[0]?.id??'');
+  }
+  renameFleetDevice(event:Event):void{
+    const name=(event.target as HTMLInputElement).value;
+    this.saveFleetDraft(this.fleetDraft().map(d=>d.id===this.fleetSelected()?
+      {...d,name}:d));
+  }
+  private saveFleetDraft(devices:FleetDevice[]):void{
+    this.fleetDraft.set(devices);
+    try{
+      localStorage.setItem(FLEET_KEY,JSON.stringify(validateFleet({devices})));
+      this.fleetStatus.set('PLC list saved on this browser');
+    }catch(error){this.fleetStatus.set('Check PLC list: '+String(error));}
+  }
+  private async fleetRequest(path:string,body?:unknown):Promise<FleetSummary>{
+    if(this.adminToken().length<32)throw Error('Enter server access key first');
+    const port=location.port==='4200'?':8787':'';
+    const url=location.protocol+'//'+location.hostname+port+'/api/fleet'+path;
+    const response=await fetch(url,{
+      method:body===undefined?'GET':'POST',mode:'cors',credentials:'omit',
+      signal:AbortSignal.timeout(30000),
+      headers:{Authorization:'Bearer '+this.adminToken(),
+        ...(body===undefined?{}:{'Content-Type':'application/json'})},
+      ...(body===undefined?{}:{body:JSON.stringify(body)})
+    });
+    const data=await response.json() as FleetSummary & {error?:string};
+    if(!response.ok)throw Error(data.error??('Server HTTP '+response.status));
+    return data;
+  }
+  async loadFleet():Promise<void>{
+    if(this.fleetBusy())return;
+    this.fleetBusy.set(true);
+    try{
+      const state=await this.fleetRequest('');
+      this.fleetRevision.set(state.revision);
+      this.fleetHealth.set(state.devices);
+      if(state.devices.length){
+        this.saveFleetDraft(state.devices.map(({id,name,config})=>({id,name,config})));
+        this.selectFleetDevice(state.devices[0]!.id);
+      }
+      this.fleetStatus.set('Connected · '+state.devices.length+' PLCs on server');
+    }catch(error){
+      this.fleetRevision.set(null);
+      this.fleetStatus.set('Server unavailable: '+String(error));
+    }finally{this.fleetBusy.set(false);}
+  }
+  async applyFleet():Promise<void>{
+    if(this.fleetBusy()||!this.fleetValidation().ok||this.fleetRevision()===null)return;
+    this.fleetBusy.set(true);
+    try{
+      const state=await this.fleetRequest('/apply',{
+        revision:this.fleetRevision(),devices:this.fleetValidation().fleet!.devices
+      });
+      this.fleetRevision.set(state.revision);
+      this.fleetHealth.set(state.devices);
+      this.fleetStatus.set('Saved on server · '+state.devices.length+' PLCs');
+    }catch(error){
+      this.fleetRevision.set(null);
+      this.fleetStatus.set('No changes applied: '+String(error));
+    }finally{this.fleetBusy.set(false);}
+  }
+  async testFleetDevice():Promise<void>{
+    if(this.fleetBusy()||!this.fleetValidation().ok)return;
+    const device=this.fleetDraft().find(d=>d.id===this.fleetSelected());
+    if(!device)return;
+    this.fleetBusy.set(true);
+    try{
+      const state=await this.fleetRequest('/test',{device});
+      this.fleetStatus.set('PLC responding · '+(state as unknown as {latencyMs:number}).latencyMs+' ms');
+    }catch(error){this.fleetStatus.set('PLC test failed: '+String(error));}
+    finally{this.fleetBusy.set(false);}
+  }
   showMoreMappings():void{
     this.mappingLimit.update(v=>Math.min(v+40,this.mappingDraft().tags.length));
   }
@@ -181,8 +313,11 @@ export class EditorComponent implements OnDestroy {
     this.mappingDraft.set(next);
     try{
       const safe=validateModbusConfig(next);
-      localStorage.setItem(MODBUS_KEY,JSON.stringify(safe));
-      this.mappingStatus.set('Mapping saved locally · export to activate on Node server');
+      if(this.fleetMode()){
+        this.saveFleetDraft(this.fleetDraft().map(d=>
+          d.id===this.fleetSelected()?{...d,config:safe}:d));
+      }else localStorage.setItem(MODBUS_KEY,JSON.stringify(safe));
+      this.mappingStatus.set('Mapping ready');
     }catch(error){
       this.mappingStatus.set('Fix mapping: '+String(error instanceof Error?error.message:error));
     }
@@ -223,7 +358,7 @@ export class EditorComponent implements OnDestroy {
   bindMappedTag(event:Event):void{
     const id=(event.target as HTMLSelectElement).value;
     const selected=this.selected();
-    if(!selected||!this.mappingDraft().tags.some(tag=>tag.tagId===id))return;
+    if(!selected||!this.availableMappingTags().some(tag=>tag.id===id))return;
     try{
       this.record(editShape(this.project(),selected.id,{tagId:id}));
       this.status.set('Bound '+selected.name+' to '+id);
@@ -265,6 +400,7 @@ export class EditorComponent implements OnDestroy {
     this.adminToken.set((event.target as HTMLInputElement).value);
     this.deviceRevision.set(null);
     this.deviceHealth.set('NOT CONNECTED');
+    this.fleetRevision.set(null);
     this.deviceDiagnostics.set(null);
     this.deviceProbeStatus.set('');
   }

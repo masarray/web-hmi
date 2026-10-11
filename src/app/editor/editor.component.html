@@ -90,6 +90,47 @@
               <span>Modbus TCP · FC01/02/03/04 · read-only engineering</span></div>
             <button type="button" (click)="toggleMapping()" aria-label="Close device mapper">✕ Close</button>
           </div>
+          <nav class="device-modes" aria-label="Device configuration mode">
+            <button type="button" [class.on]="!fleetMode()" (click)="switchDeviceMode(false)">Single PLC</button>
+            <button type="button" [class.on]="fleetMode()" (click)="switchDeviceMode(true)">Multiple PLCs</button>
+          </nav>
+          @if(fleetMode()){
+            <section class="fleet-controls" aria-label="Multiple PLC manager" data-testid="fleet-manager">
+              <div class="fleet-devices">
+                @for(device of fleetDraft();track device.id){
+                  <button type="button" [class.on]="fleetSelected()===device.id"
+                    (click)="selectFleetDevice(device.id)">
+                    {{device.name}}
+                    <small>{{device.id}}</small>
+                    @for(state of fleetHealth();track state.id){
+                      @if(state.id===device.id){
+                        <span [class.online]="state.health==='HEALTHY'">{{state.health}}</span>
+                      }
+                    }
+                  </button>
+                }
+                <button type="button" class="fleet-add" [disabled]="fleetDraft().length>=16"
+                  (click)="addFleetDevice()">+ Add PLC</button>
+              </div>
+              @if(fleetSelected()){
+                <div class="fleet-name">
+                  <label>PLC name
+                    <input aria-label="Selected PLC name" [value]="selectedFleetName()" (change)="renameFleetDevice($event)">
+                  </label>
+                  <button type="button" (click)="deleteFleetDevice()">Remove selected PLC</button>
+                </div>
+              }
+              <div class="fleet-actions">
+                <button type="button" (click)="loadFleet()"
+                  [disabled]="fleetBusy()||adminToken().length<32">Load from server</button>
+                <button type="button" (click)="testFleetDevice()"
+                  [disabled]="fleetBusy()||adminToken().length<32||!fleetValidation().ok">Test selected PLC</button>
+                <button type="button" class="mapping-apply" (click)="applyFleet()"
+                  [disabled]="fleetBusy()||fleetRevision()===null||!fleetValidation().ok">Apply all PLCs</button>
+                <span role="status">{{fleetStatus()}}</span>
+              </div>
+            </section>
+          }
           <div class="mapping-hint">
             Edit the device and tags, connect with your administrator token,
             and apply the configuration directly to the Node server. A candidate
@@ -129,6 +170,7 @@
               <input type="file" accept=".json,application/json" (change)="importMapping($event)" hidden>
             </label>
           </div>
+          @if(!fleetMode()){
           <div class="mapping-control">
             <label>Administrator token (memory only)
               <input type="password" autocomplete="off" spellcheck="false"
@@ -165,6 +207,16 @@
                   {{d.lastError}}
                 </span>
               }
+            </div>
+          }
+          } @else {
+            <div class="fleet-token">
+              <label>Server access key
+                <input type="password" autocomplete="off" aria-label="Fleet server token"
+                  [value]="adminToken()" (input)="setAdminToken($event)"
+                  placeholder="Enter server admin token">
+              </label>
+              <span>Enter once to load and apply PLCs</span>
             </div>
           }
           <div class="mapping-table-wrap">
@@ -525,8 +577,8 @@
               <select aria-label="Choose mapped device tag" [value]="shape.tagId"
                 (change)="bindMappedTag($event)">
                 <option value="">Choose a configured tag...</option>
-                @for(tag of mappingDraft().tags;track tag.tagId){
-                  <option [value]="tag.tagId">{{tag.tagId}} · FC{{tag.functionCode}} @ {{tag.address}}</option>
+                @for(tag of availableMappingTags();track tag.id){
+                  <option [value]="tag.id">{{tag.label}}</option>
                 }
               </select>
             </label>

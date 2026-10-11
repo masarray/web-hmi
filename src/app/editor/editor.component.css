@@ -222,3 +222,27 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 .device-diagnostics .device-error{color:#ffb5aa;flex-basis:100%;overflow:hidden;text-overflow:ellipsis}
 [data-testid=device-runtime-health][data-health=HEALTHY]{color:#8ee1c6}
 [data-testid=device-runtime-health][data-health=DEGRADED]{color:#ffb5aa}
+
+/* CP-13 multi-PLC mode: compact, one screen, no extra modal or framework. */
+.device-modes{display:flex;gap:5px;padding:9px 18px 4px}
+.device-modes button{border:1px solid #34586c;padding:7px 13px}
+.device-modes button.on{background:#276785;color:white;border-color:#4d9aba}
+.fleet-controls{padding:5px 18px 12px}
+.fleet-devices{display:flex;gap:5px;overflow-x:auto;padding:4px 0 8px}
+.fleet-devices button{min-width:115px;background:#1a3443;border:1px solid #345265;
+ padding:8px;text-align:left;display:flex;flex-direction:column;gap:3px}
+.fleet-devices button.on{border-color:#65b8dd;background:#24536a}
+.fleet-devices small{font-size:9px;color:#8cb0c2}
+.fleet-devices span{font-size:9px;color:#ffb6b6}
+.fleet-devices span.online{color:#97dec1}
+.fleet-devices .fleet-add{min-width:96px;align-items:center;justify-content:center}
+.fleet-name,.fleet-actions,.fleet-token{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.fleet-name{padding:5px 0 8px}
+.fleet-name label,.fleet-token label{font-size:11px;color:#b2cbdb}
+.fleet-name input,.fleet-token input{padding:7px;background:#0b1923;color:#e6f3fb;
+ border:1px solid #395a6f;border-radius:4px;min-width:180px}
+.fleet-actions span,.fleet-token span{font-size:10px;color:#9fb9ca}
+.fleet-actions button{background:#234153;border:1px solid #456a81;padding:7px}
+.fleet-actions button.mapping-apply{background:#27674f}
+.fleet-actions button:disabled{opacity:.4}
+.fleet-token{padding:4px 18px 9px}
