@@ -184,18 +184,23 @@
                         <rect x="0" y="0" width="100%" height="100%" fill="transparent"
                           pointer-events="all"/>
                         @for(part of graphic.parts;track $index){
-                          <g [class.process-rotor]="symbolAnimated(shape) && shape.animation==='spin' && part.rotor===true">
-                            @if(part.kind==='path'){
-                              <path [attr.d]="part.d" fill="none" [attr.stroke]="partStroke(shape,part.rotor===true)"
-                                stroke-width="1.7" vector-effect="non-scaling-stroke"
-                                stroke-linecap="round" stroke-linejoin="round"/>
-                            } @else {
-                              <ellipse [attr.cx]="part.cx" [attr.cy]="part.cy"
-                                [attr.rx]="part.rx" [attr.ry]="part.ry"
-                                fill="none" [attr.stroke]="partStroke(shape,part.rotor===true)"
-                                stroke-width="1.7" vector-effect="non-scaling-stroke"/>
-                            }
-                          </g>
+                          @if(partAppearance(shape,$index);as appearance){
+                            <g [class.process-rotor]="appearance.spin"
+                              [attr.display]="appearance.visible?null:'none'"
+                              [attr.data-part-index]="$index">
+                              @if(part.kind==='path'){
+                                <path [attr.d]="part.d" fill="none"
+                                  [attr.stroke]="appearance.stroke"
+                                  stroke-width="1.7" vector-effect="non-scaling-stroke"
+                                  stroke-linecap="round" stroke-linejoin="round"/>
+                              } @else {
+                                <ellipse [attr.cx]="part.cx" [attr.cy]="part.cy"
+                                  [attr.rx]="part.rx" [attr.ry]="part.ry"
+                                  fill="none" [attr.stroke]="appearance.stroke"
+                                  stroke-width="1.7" vector-effect="non-scaling-stroke"/>
+                              }
+                            </g>
+                          }
                         }
                       </svg>
                     } @else {
@@ -324,6 +329,26 @@
             </label>
             <p class="helper">Animation runs in Preview only. With a bound tag, it
               runs only when the simulated sample is GOOD and active.</p>
+            @if(processGraphic(shape.symbolId);as graphic){
+              <div class="part-rules">
+                <h3>COMPONENT BEHAVIOR</h3>
+                <p class="helper">Optional rules for individual SVG parts.
+                  Default preserves the original rotor and housing behavior.</p>
+                @for(part of graphic.parts;track $index){
+                  <label>Part {{$index+1}} · {{part.rotor?'Rotor':'Static outline'}}
+                    <select [attr.aria-label]="'Part '+($index+1)+' behavior'"
+                      [value]="partEffect(shape,$index)"
+                      (change)="updatePartEffect(shape,$index,$event)">
+                      <option value="default">Default</option>
+                      <option value="fixed">Fixed color, no animation</option>
+                      <option value="state-color">Follow tag state color</option>
+                      <option value="hide-idle">Hide unless GOOD + active</option>
+                      <option value="spin-active">Spin when active (Rotate)</option>
+                    </select>
+                  </label>
+                }
+              </div>
+            }
           }
         </div>
         <div class="inspector-section">

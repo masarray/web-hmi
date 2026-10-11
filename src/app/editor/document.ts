@@ -1,6 +1,7 @@
 /** Versioned, executable-code-free project model. */
 import {findSymbol} from './symbols.ts';
-import type {VisualRule} from './visual-runtime.ts';
+import type {VisualRule,PartRule} from './visual-runtime.ts';
+import {findProcessGraphic} from './process-graphics.ts';
 export type AnimationMode='none'|'spin'|'pulse';
 export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'text' | 'breaker' | 'symbol';
 export interface Shape {
@@ -12,6 +13,8 @@ export interface Shape {
   animation?:AnimationMode;
   visualRule?:VisualRule;
   threshold?:number;
+  /** Optional behavior overrides for indexed parts of an allowlisted inline SVG. */
+  partRules?:PartRule[];
 }
 export interface Page { id:string; name:string; shapes:Shape[] }
 export interface Project {
@@ -26,6 +29,23 @@ const named=(v:unknown,max:number):v is string=>
   typeof v==='string' && v.length>0 && v.length<=max;
 const obj=(v:unknown):v is Record<string,unknown> =>
   v!==null && typeof v==='object' && !Array.isArray(v);
+export function validPartRules(value:unknown,symbolId:unknown):value is PartRule[] {
+  if(!Array.isArray(value)||value.length>16||
+    typeof symbolId!=='string')return false;
+  const graphic=findProcessGraphic(symbolId);
+  if(!graphic)return false;
+  const seen=new Set<number>();
+  for(const entry of value){
+    if(!obj(entry))return false;
+    const index=entry.partIndex;
+    if(typeof index!=='number'||!Number.isInteger(index)||
+       index<0||index>=graphic.parts.length||seen.has(index)||
+       !(['fixed','state-color','hide-idle','spin-active'] as unknown[]).includes(entry.effect))
+      return false;
+    seen.add(index);
+  }
+  return true;
+}
 export function isShape(v:unknown):v is Shape {
   return obj(v) && typeof v.id==='string' && idPattern.test(v.id) &&
     typeof v.kind==='string' && kinds.has(v.kind) &&
@@ -42,7 +62,8 @@ export function isShape(v:unknown):v is Shape {
     (v.animation===undefined||
       v.animation==='none'||v.animation==='spin'||v.animation==='pulse') &&
     (v.visualRule===undefined||v.visualRule==='when-true'||v.visualRule==='at-least') &&
-    (v.threshold===undefined||finite(v.threshold,-1000000,1000000));
+    (v.threshold===undefined||finite(v.threshold,-1000000,1000000)) &&
+    (v.partRules===undefined||validPartRules(v.partRules,v.symbolId));
 }
 export function parseProject(v:unknown):Project {
   if (!obj(v) || v.schemaVersion!==1 || !named(v.id,80) ||
@@ -68,7 +89,10 @@ export function parseProject(v:unknown):Project {
         ...(s.symbolId!==undefined?{symbolId:s.symbolId}:{}),
         ...(s.animation!==undefined?{animation:s.animation}:{}),
         ...(s.visualRule!==undefined?{visualRule:s.visualRule}:{}),
-        ...(s.threshold!==undefined?{threshold:s.threshold}:{})};
+        ...(s.threshold!==undefined?{threshold:s.threshold}:{}),
+        ...(s.partRules!==undefined?{
+          partRules:s.partRules.map(rule=>({partIndex:rule.partIndex,effect:rule.effect}))
+        }:{})};
     });
     return {id:raw.id,name:raw.name,shapes};
   });
@@ -122,7 +146,7 @@ export function insertShape(p:Project,s:Shape):Project {
   return {...p,pages:p.pages.map(page=>page.id===p.activePageId?
     {...page,shapes:[...page.shapes,s]}:page)};
 }
-export type ShapeEdit=Partial<Pick<Shape,'name'|'x'|'y'|'width'|'height'|'fill'|'stroke'|'text'|'tagId'|'animation'|'visualRule'|'threshold'>>;
+export type ShapeEdit=Partial<Pick<Shape,'name'|'x'|'y'|'width'|'height'|'fill'|'stroke'|'text'|'tagId'|'animation'|'visualRule'|'threshold'|'partRules'>>;
 export function editShape(p:Project,id:string,edit:ShapeEdit):Project {
   return {...p,pages:p.pages.map(page=>page.id===p.activePageId?
     {...page,shapes:page.shapes.map(s=>{

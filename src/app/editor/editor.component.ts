@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener,
-  ViewChild, computed, signal } from '@angular/core';
+  ViewChild, computed, signal, OnDestroy } from '@angular/core';
 import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
   newShape, newSymbol, insertShape, editShape, deleteShape, createPage } from './document';
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
-import {evaluatePage,updateTagSample,type TagQuality,type TagTable,
-  type VisualRule,type VisualState} from './visual-runtime';
+import {evaluatePage,evaluatePartAppearance,updateTagSample,
+  nextFreshnessDeadline,STALE_AFTER_MS,type TagQuality,type TagTable,
+  type VisualState,type PartEffect,type PartAppearance} from './visual-runtime';
 import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } from './actions';
 import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align, type Axis } from './selection-ops';
 
@@ -19,7 +20,7 @@ type DragPreview={id:string;x:number;y:number;width:number;height:number};
   styleUrl:'./editor.component.css',
   changeDetection:ChangeDetectionStrategy.OnPush
 })
-export class EditorComponent {
+export class EditorComponent implements OnDestroy {
   @ViewChild('viewport') viewport?:ElementRef<SVGSVGElement>;
   readonly project=signal<Project>(this.restore());
   readonly selectedIds=signal<string[]>([]);
@@ -31,6 +32,8 @@ export class EditorComponent {
   readonly previewMode=signal(false);
   /** Transient test-feed, never saved to project or undo history. */
   readonly simulatedSamples=signal<TagTable>(new Map());
+  readonly freshnessClock=signal(Date.now());
+  private freshnessTimer:ReturnType<typeof setTimeout>|null=null;
   readonly simulatedTagChoice=signal('');
   readonly simulatedQuality=signal<TagQuality>('GOOD');
   readonly simulatedValue=signal(1);
@@ -41,7 +44,22 @@ export class EditorComponent {
     return this.boundTags().includes(chosen)?chosen:(this.boundTags()[0]??'');
   });
   readonly visualStates=computed(()=>evaluatePage(
-    this.activePage().shapes,this.simulatedSamples(),this.previewMode()));
+    this.activePage().shapes,this.simulatedSamples(),this.previewMode(),
+    this.freshnessClock()));
+  /** Recomputed only when a shape or tag state actually changes. */
+  readonly partAppearances=computed(()=>{
+    const visuals=this.visualStates();
+    const result=new Map<string,readonly PartAppearance[]>();
+    for(const shape of this.activePage().shapes){
+      const graphic=findProcessGraphic(shape.symbolId);
+      const visual=visuals.get(shape.id);
+      if(shape.kind==='symbol'&&graphic&&visual){
+        result.set(shape.id,graphic.parts.map((part,index)=>
+          evaluatePartAppearance(shape,part,index,visual,this.previewMode())));
+      }
+    }
+    return result;
+  });
   readonly zoom=signal(1);
   readonly status=signal('Editor ready · local project');
   readonly canUndo=signal(false);
@@ -72,6 +90,23 @@ export class EditorComponent {
   private past:Project[]=[];
   private future:Project[]=[];
   private drag:Drag|null=null;
+  ngOnDestroy():void{this.cancelFreshnessTimer();}
+  private cancelFreshnessTimer():void{
+    if(this.freshnessTimer!==null)clearTimeout(this.freshnessTimer);
+    this.freshnessTimer=null;
+  }
+  private rescheduleFreshness():void {
+    this.cancelFreshnessTimer();
+    if(!this.previewMode())return;
+    const now=Date.now();
+    const deadline=nextFreshnessDeadline(this.simulatedSamples(),now);
+    if(deadline===null)return;
+    this.freshnessTimer=setTimeout(()=>{
+      this.freshnessTimer=null;
+      this.freshnessClock.set(Date.now());
+      this.rescheduleFreshness();
+    },Math.max(1,deadline-now+1));
+  }
 
   private restore():Project {
     try {
@@ -225,6 +260,25 @@ export class EditorComponent {
 
   stateOf(shape:Shape):VisualState|undefined{return this.visualStates().get(shape.id);}
   symbolAnimated(shape:Shape):boolean{return this.stateOf(shape)?.animate??false;}
+  partAppearance(shape:Shape,index:number):PartAppearance{
+    return this.partAppearances().get(shape.id)?.[index] ??
+      {stroke:shape.stroke,visible:true,spin:false};
+  }
+  partEffect(shape:Shape,index:number):string{
+    return shape.partRules?.find(rule=>rule.partIndex===index)?.effect??'default';
+  }
+  updatePartEffect(shape:Shape,index:number,event:Event):void{
+    const value=(event.target as HTMLSelectElement).value;
+    const allowed=['default','fixed','state-color','hide-idle','spin-active'];
+    const graphic=findProcessGraphic(shape.symbolId);
+    if(!graphic||!allowed.includes(value)||index<0||index>=graphic.parts.length)return;
+    const rules=(shape.partRules??[]).filter(rule=>rule.partIndex!==index);
+    if(value!=='default')
+      rules.push({partIndex:index,effect:value as PartEffect});
+    rules.sort((a,b)=>a.partIndex-b.partIndex);
+    try{this.record(editShape(this.project(),shape.id,{partRules:rules}));}
+    catch(error){this.status.set(String(error));}
+  }
   partStroke(shape:Shape,rotor:boolean):string{
     const state=this.stateOf(shape);
     if(!state || !shape.tagId || !this.previewMode())return shape.stroke;
@@ -254,9 +308,12 @@ export class EditorComponent {
     const previous=this.simulatedSamples();
     const sequence=(previous.get(tagId)?.sequence??0)+1;
     try{
+      const now=Date.now();
       this.simulatedSamples.set(updateTagSample(previous,{
-        tagId,value,quality:this.simulatedQuality(),sequence
+        tagId,value,quality:this.simulatedQuality(),sequence,receivedAtMs:now
       }));
+      this.freshnessClock.set(now);
+      this.rescheduleFreshness();
     }catch(error){this.status.set(String(error));}
   }
   symbolUrl(shape:Shape):string{
@@ -305,7 +362,12 @@ export class EditorComponent {
   }
   toggleGrid():void { this.gridVisible.update(v=>!v); }
   toggleSnap():void { this.snapEnabled.update(v=>!v); }
-  togglePreview():void { this.previewMode.update(v=>!v);this.selectOnly(null); }
+  togglePreview():void {
+    this.previewMode.update(v=>!v);
+    this.selectOnly(null);
+    this.freshnessClock.set(Date.now());
+    this.rescheduleFreshness();
+  }
   zoomBy(delta:number):void {
     this.zoom.update(value=>Math.min(2.5,Math.max(0.5,Math.round((value+delta)*10)/10)));
   }

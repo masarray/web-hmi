@@ -142,3 +142,7 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 .simulation-bar button{border:1px solid #8f7050;background:#4b3d2e;
   color:#fff0d2;padding:4px 9px}
 .visual-quality-indicator{font-family:Inter,"Segoe UI",Arial,sans-serif}
+
+/* CP-06B: grouped by component to avoid modal dialogs for novice users. */
+.part-rules{margin-top:12px;border-top:1px solid #344b59;padding-top:12px}
+.part-rules h3{margin-bottom:7px}.part-rules label{margin-top:9px}
