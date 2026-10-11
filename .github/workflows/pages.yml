@@ -1,0 +1,82 @@
+name: Publish original Web HMI UI
+
+# Only publish a bundle that passed the existing Editor CI.
+# Never build a special "demo" version or modify Angular source.
+on:
+  workflow_run:
+    workflows:
+      - Editor CI
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-hmi-github-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Deploy CI-tested Angular build to Pages
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download exact Angular production artifact from passing CI
+        uses: actions/download-artifact@v4
+        with:
+          name: web-hmi-editor
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: site
+
+      - name: Set GitHub Pages subpath (HTML base only)
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync,existsSync} from 'node:fs';
+          const entry='site/index.html';
+          if(!existsSync(entry))throw Error('CI artifact has no index.html');
+          if(!existsSync('site/assets/fuxa/feeder.svg'))
+            throw Error('CI artifact missing SVG library');
+          let html=readFileSync(entry,'utf8');
+          if(!/<head(?:\s[^>]*)?>/i.test(html))throw Error('Missing HTML head');
+          // Deployment mount point only. No application source or UI changes.
+          html=html.replace(/<base\b[^>]*>/gi,'');
+          html=html.replace(/<head(?:\s[^>]*)?>/i,
+            head=>head+'<base href="/web-hmi/">');
+          if((html.match(/<base\b/gi)??[]).length!==1)
+            throw Error('Expected exactly one HTML base');
+          writeFileSync(entry,html);
+          console.log('Publishing unchanged Angular UI at /web-hmi/');
+          NODE
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static Angular bundle
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Confirm deployed source
+        run: echo "Deployed Editor CI commit ${{ github.event.workflow_run.head_sha }}"
