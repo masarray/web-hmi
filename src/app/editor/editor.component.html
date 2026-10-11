@@ -122,7 +122,7 @@
                       <strong>{{alarm.label}}</strong>
                       <span>{{alarm.tagId}} · {{alarm.phase==='UNKNOWN'?'Signal unavailable':
                         alarm.phase==='ACTIVE'?'Active':'Normal'}}
-                        @if(alarm.since){· {{alarmClock(alarm.since)} }}
+                        @if(alarm.since){ · <time>{{alarmClock(alarm.since)}}</time> }
                       </span>
                     </div>
                     <span class="alarm-severity">{{alarm.severity}}</span>
