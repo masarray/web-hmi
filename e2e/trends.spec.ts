@@ -35,7 +35,7 @@ test('CP15 engineer configures and views historian from one simple panel',async(
  await page.getByRole('textbox',{name:'Trend server token'}).fill(TOKEN);
  await page.getByRole('button',{name:'Connect'}).click();
  await page.getByText('Recording settings').click();
- await page.getByRole('textbox',{name:'Trend tag ID'}).fill(recorded);
+ await page.getByLabel('Trend tag ID').fill(recorded);
  await page.getByRole('button',{name:'Add tag'}).click();
  await page.getByRole('button',{name:'Save recording'}).click();
  await expect(panel).toContainText('Recording settings saved');
@@ -60,4 +60,30 @@ test('CP15 unavailable historian gives simple feedback and never changes PLC map
  await page.getByRole('button',{name:'Close trends'}).click();
  await page.getByRole('button',{name:'Configure Modbus tags'}).click();
  await expect(page.getByRole('textbox',{name:'Modbus device host'})).toBeVisible();
+});
+
+test('CP15 saved trend configuration loads chart on Connect without extra click',async({page})=>{
+ let queried=0;
+ await page.route('**/api/trends**',async route=>{
+  const req=route.request();
+  if(req.url().endsWith('/query')){
+   queried++;
+   const input=req.postDataJSON();
+   await route.fulfill({status:200,contentType:'application/json',
+    body:JSON.stringify({from:input.from,to:input.to,scanned:1,
+     series:[{tagId:recorded,points:[
+      {t:input.to-15000,tagId:recorded,q:'GOOD',v:52}
+     ]}]})});
+  }else{
+   await route.fulfill({status:200,contentType:'application/json',
+    body:JSON.stringify({revision:4,config:{tags:[recorded],sampleMs:2000,retentionDays:3},
+     recorded:20,queued:0,lastSavedAt:Date.now(),storageError:null})});
+  }
+ });
+ await page.goto('/');
+ await page.getByRole('button',{name:'Open trends'}).click();
+ await page.getByRole('textbox',{name:'Trend server token'}).fill(TOKEN);
+ await page.getByRole('button',{name:'Connect'}).click();
+ await expect(page.getByTestId('trend-center').locator('.trend-legend')).toContainText(recorded);
+ await expect.poll(()=>queried).toBe(1);
 });
