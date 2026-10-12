@@ -7,6 +7,8 @@ import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
 import {TagStreamClient,type StreamStatus} from './tag-stream-client';
 import {validateAlarmConfig,type AlarmRule,type AlarmSnapshot,
  type AlarmCondition,type AlarmSeverity} from '../../shared/alarm-contract.ts';
+import {CB_ROTATING,parseDynamicSymbol,findDynamicSymbol,resolveDynamicState,
+  composeLineSymbol,type DynamicSymbol,type DynamicAppearance,type PointMode} from './dynamic-symbol';
 import {qualifiedTag,validateFleet,type FleetDevice} from '../../shared/device-fleet.ts';
 import {validateModbusConfig,planReads,widthOf,dataTypeOf,
   type ModbusConfig,type RegisterTag,type ReadFunction,
@@ -95,6 +97,23 @@ export class EditorComponent implements OnDestroy {
   readonly visualStates=computed(()=>evaluatePage(
     this.activePage().shapes,this.activeSamples(),this.previewMode(),
     this.freshnessClock()));
+  /** Single indexed definition catalog shared across all symbol instances. */
+  readonly dynamicCatalog=computed(()=>{
+    const items=[CB_ROTATING,...(this.project().customSymbols??[])];
+    return new Map(items.map(def=>[def.id,def] as const));
+  });
+  readonly dynamicStates=computed(()=>{
+    const result=new Map<string,DynamicAppearance>();
+    const catalog=this.dynamicCatalog();
+    const samples=this.activeSamples(),now=this.freshnessClock(),preview=this.previewMode();
+    for(const shape of this.activePage().shapes){
+      if(shape.kind!=='symbol')continue;
+      const def=catalog.get(shape.symbolId??'');
+      if(def)result.set(shape.id,resolveDynamicState(def,shape.pointMode??'double-point',
+        samples.get(shape.tagId),now,preview,!!shape.tagId));
+    }
+    return result;
+  });
   /** Recomputed only when a shape or tag state actually changes. */
   readonly partAppearances=computed(()=>{
     const visuals=this.visualStates();
@@ -132,6 +151,16 @@ export class EditorComponent implements OnDestroy {
   });
   private alarmTimer:ReturnType<typeof setInterval>|null=null;
   readonly mappingOpen=signal(false);
+  readonly symbolBuilderOpen=signal(false);
+  readonly symbolBuilderName=signal('My Circuit Breaker');
+  readonly symbolBuilderMoving=signal('');
+  readonly symbolBuilderPivotX=signal(0);
+  readonly symbolBuilderPivotY=signal(0);
+  readonly symbolBuilderOpenAngle=signal(-60);
+  readonly symbolBuilderLines=computed(()=>this.activePage().shapes.filter(s=>
+    this.selectedIds().includes(s.id)&&s.kind==='line'));
+  readonly symbolBuilderPossible=computed(()=>this.selectionCount()>0&&
+    this.symbolBuilderLines().length===this.selectionCount());
   readonly fleetMode=signal(false);
   readonly fleetDraft=signal<FleetDevice[]>(restoreFleetDraft());
   readonly fleetSelected=signal<string>('PLC1');
@@ -806,7 +835,8 @@ export class EditorComponent implements OnDestroy {
   }
   allowPaletteDrop(event:DragEvent):void {
     if(event.dataTransfer?.types.includes('application/x-web-hmi-shape') ||
-      event.dataTransfer?.types.includes('application/x-web-hmi-symbol')){
+      event.dataTransfer?.types.includes('application/x-web-hmi-symbol') ||
+      event.dataTransfer?.types.includes('application/x-web-hmi-custom-symbol')){
       event.preventDefault();
       event.dataTransfer.dropEffect='copy';
     }
@@ -814,12 +844,19 @@ export class EditorComponent implements OnDestroy {
   dropPaletteShape(event:DragEvent):void {
     const kind=event.dataTransfer?.getData('application/x-web-hmi-shape');
     const symbolId=event.dataTransfer?.getData('application/x-web-hmi-symbol');
+    const customId=event.dataTransfer?.getData('application/x-web-hmi-custom-symbol');
     if(this.previewMode())return;
-    if(!symbolId && (!kind||!this.palette.some(tool=>tool.kind===kind)))return;
+    if(!symbolId&&!customId && (!kind||!this.palette.some(tool=>tool.kind===kind)))return;
     if(symbolId && !findSymbol(symbolId))return;
+    if(customId && !findDynamicSymbol(customId,this.project().customSymbols??[]))return;
     event.preventDefault();
     const point=this.pointerToCanvas(event);
     if(!point)return;
+    if(customId){
+      try{this.placeCustomSymbol(customId,this.round(point.x-45),this.round(point.y-45));}
+      catch(error){this.status.set(String(error));}
+      return;
+    }
     const shape=symbolId?newSymbol(symbolId,this.activePage().shapes.length):
       newShape(kind as ShapeKind,this.activePage().shapes.length);
     const placed={...shape,
@@ -833,6 +870,99 @@ export class EditorComponent implements OnDestroy {
   }
 
   stateOf(shape:Shape):VisualState|undefined{return this.visualStates().get(shape.id);}
+  dynamicSymbol(shape:Shape):DynamicSymbol|undefined{
+    return shape.kind==='symbol'?
+      this.dynamicCatalog().get(shape.symbolId??''):undefined;
+  }
+  dynamicState(shape:Shape):DynamicAppearance|undefined{
+    return this.dynamicStates().get(shape.id);
+  }
+  setPointMode(shape:Shape,event:Event):void {
+    const value=(event.target as HTMLSelectElement).value;
+    if(value!=='single-point'&&value!=='double-point')return;
+    try{this.record(editShape(this.project(),shape.id,{pointMode:value as PointMode}));}
+    catch(error){this.status.set(String(error));}
+  }
+  private placeCustomSymbol(id:string,x?:number,y?:number):void{
+    const def=findDynamicSymbol(id,this.project().customSymbols??[]);
+    if(!def)return;
+    const shape:Shape={...newShape('rect',this.activePage().shapes.length),
+      kind:'symbol',symbolId:id,name:def.name,pointMode:'double-point',
+      width:Math.max(40,Math.min(140,def.viewBox[0])),
+      height:Math.max(40,Math.min(140,def.viewBox[1])),animation:'none'};
+    const next={...shape,...(x===undefined?{}:{x}),...(y===undefined?{}:{y})};
+    this.record(insertShape(this.project(),next));
+    this.selectOnly(next.id);
+  }
+  addCustomSymbol(id:string):void {
+    if(this.previewMode())return;
+    try{this.placeCustomSymbol(id);this.status.set('Reusable symbol inserted · bind a tag');}
+    catch(error){this.status.set(String(error));}
+  }
+  startCustomSymbolDrag(event:DragEvent,id:string):void{
+    if(this.previewMode()||!findDynamicSymbol(id,this.project().customSymbols??[]))return;
+    event.dataTransfer?.setData('application/x-web-hmi-custom-symbol',id);
+    if(event.dataTransfer)event.dataTransfer.effectAllowed='copy';
+  }
+  private downloadJson(value:unknown,name:string):void{
+    const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],
+      {type:'application/json'}));
+    const a=document.createElement('a');a.href=url;a.download=name;a.click();
+    URL.revokeObjectURL(url);
+  }
+  exportDynamicSymbol(shape:Shape):void{
+    const def=this.dynamicSymbol(shape);
+    if(!def)return;
+    this.downloadJson(def,def.id+'.symbol.json');
+    this.status.set('Portable dynamic symbol exported');
+  }
+  async importDynamicSymbol(event:Event):Promise<void>{
+    const input=event.target as HTMLInputElement;
+    const file=input.files?.[0];input.value='';
+    if(!file)return;
+    try{
+      if(file.size>128_000)throw Error('Maximum symbol file size is 128 KB');
+      const def=parseDynamicSymbol(JSON.parse(await file.text()));
+      if(!!findDynamicSymbol(def.id)||!!findSymbol(def.id))throw Error('Reserved symbol ID');
+      const custom=this.project().customSymbols??[];
+      if(custom.some(x=>x.id===def.id))throw Error('Symbol already exists: '+def.id);
+      if(custom.length>=128)throw Error('Maximum 128 custom symbols');
+      this.record({...this.project(),customSymbols:[...custom,def]});
+      this.status.set('Dynamic symbol imported to project library: '+def.name);
+    }catch(error){this.status.set('Symbol import rejected: '+String(error));}
+  }
+  openSymbolBuilder():void{
+    if(this.previewMode()||!this.symbolBuilderPossible())return;
+    const moving=this.symbolBuilderLines().at(-1)!;
+    this.symbolBuilderMoving.set(moving.id);
+    this.symbolBuilderPivotX.set(moving.x);
+    this.symbolBuilderPivotY.set(moving.y);
+    this.symbolBuilderName.set('My Circuit Breaker');
+    this.symbolBuilderOpenAngle.set(-60);
+    this.symbolBuilderOpen.set(true);
+  }
+  chooseMovingBlade(event:Event):void{
+    const id=(event.target as HTMLSelectElement).value;
+    const line=this.symbolBuilderLines().find(l=>l.id===id);
+    if(!line)return;
+    this.symbolBuilderMoving.set(id);
+    this.symbolBuilderPivotX.set(line.x);
+    this.symbolBuilderPivotY.set(line.y);
+  }
+  saveComposedSymbol():void{
+    if(!this.symbolBuilderPossible())return;
+    try{
+      const name=this.symbolBuilderName().trim();
+      const def=composeLineSymbol(this.symbolBuilderLines(),name,
+        this.symbolBuilderMoving(),[this.symbolBuilderPivotX(),this.symbolBuilderPivotY()],
+        this.symbolBuilderOpenAngle());
+      const custom=this.project().customSymbols??[];
+      if(custom.length>=128)throw Error('Maximum 128 custom symbols');
+      this.record({...this.project(),customSymbols:[...custom,def]});
+      this.symbolBuilderOpen.set(false);
+      this.status.set('Reusable '+name+' saved · available in My Symbols');
+    }catch(error){this.status.set('Symbol creation failed: '+String(error));}
+  }
   symbolAnimated(shape:Shape):boolean{return this.stateOf(shape)?.animate??false;}
   partAppearance(shape:Shape,index:number):PartAppearance{
     return this.partAppearances().get(shape.id)?.[index] ??
@@ -948,6 +1078,7 @@ export class EditorComponent implements OnDestroy {
   togglePreview():void {
     if(this.alarmOpen())this.toggleAlarmCenter();
     if(this.mappingOpen())this.mappingOpen.set(false);
+    if(this.symbolBuilderOpen())this.symbolBuilderOpen.set(false);
     this.previewMode.update(v=>!v);
     this.selectOnly(null);
     this.freshnessClock.set(Date.now());

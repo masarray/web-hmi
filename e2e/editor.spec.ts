@@ -32,7 +32,7 @@ test('drag object and reject invalid JSON import',async({page})=>{
   await page.mouse.move(rect!.x+rect!.width/2+60,rect!.y+rect!.height/2+40,{steps:5});
   await page.mouse.up();
   await expect(node).not.toHaveAttribute('transform',before!);
-  await page.locator('input[type=file]').setInputFiles({
+  await page.locator('.file-label input[type=file]').setInputFiles({
     name:'invalid.json',mimeType:'application/json',
     buffer:Buffer.from(JSON.stringify({schemaVersion:999,pages:[]}))
   });
