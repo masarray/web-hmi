@@ -61,9 +61,11 @@ export function validateTrendRequest(value:unknown,config:TrendConfig,now:number
 }
 /** Keep first/last and the extremes/quality gap per time bucket, bounded O(maxPoints). */
 export function createTrendReducer(range:TrendRequest){
-
- const bags=new Map<string,Map<number,{min:TrendRecord|null;max:TrendRecord|null;
-  bad:TrendRecord|null;first:TrendRecord|null;last:TrendRecord|null}>>();
+ // Keep only five representative events per bucket and their arrival order.
+ // The reducer remains bounded while processing arbitrarily large day files.
+ type Picked={point:TrendRecord;order:number};
+ const bags=new Map<string,Map<number,{min:Picked|null;max:Picked|null;
+  bad:Picked|null;first:Picked|null;last:Picked|null}>>();
  for(const tag of range.tags)bags.set(tag,new Map());
  const budget=Math.max(1,Math.floor(range.maxPoints/5));
  let scanned=0;
@@ -71,28 +73,32 @@ export function createTrendReducer(range:TrendRequest){
   if(p.t<range.from||p.t>range.to)return;
   const bins=bags.get(p.tagId);if(!bins)return;
   scanned++;
+  const picked:Picked={point:p,order:scanned};
   const ix=Math.min(budget-1,Math.floor((p.t-range.from)/
    (range.to-range.from)*budget));
   let bin=bins.get(ix);
   if(!bin){bin={min:null,max:null,bad:null,first:null,last:null};bins.set(ix,bin);}
-  if(!bin.first)bin.first=p;
-  bin.last=p;
-  if(p.q!=='GOOD'||p.v===null)bin.bad=p;
+  if(!bin.first)bin.first=picked;
+  bin.last=picked;
+  if(p.q!=='GOOD'||p.v===null)bin.bad=picked;
   else{
    const value=Number(p.v);
-   if(!bin.min||value<Number(bin.min.v))bin.min=p;
-   if(!bin.max||value>Number(bin.max.v))bin.max=p;
+   if(!bin.min||value<Number(bin.min.point.v))bin.min=picked;
+   if(!bin.max||value>Number(bin.max.point.v))bin.max=picked;
   }
  };
  const result=():TrendResult=>({from:range.from,to:range.to,scanned,series:range.tags.map(tagId=>{
   const points:TrendRecord[]=[];
   for(const bin of [...(bags.get(tagId)?.entries()??[])].sort((a,b)=>a[0]-b[0])){
    const b=bin[1];
-   const unique=new Map<number,TrendRecord>();
+   // Do not collapse GOOD → STALE → GOOD transitions sharing one millisecond.
+   // Deduplicate only references chosen by more than one summary slot.
+   const unique=new Set<Picked>();
    for(const p of [b.first,b.min,b.max,b.bad,b.last]){
-    if(p)unique.set(p.t,p);
+    if(p)unique.add(p);
    }
-   points.push(...[...unique.values()].sort((a,b)=>a.t-b.t));
+   points.push(...[...unique]
+    .sort((a,b)=>a.point.t-b.point.t||a.order-b.order).map(x=>x.point));
   }
   return {tagId,points};
  })});

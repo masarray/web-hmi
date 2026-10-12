@@ -30,6 +30,8 @@ export function createTagHub(opts:{
  const index=new Map<string,Set<WebSocket>>();
  const samples=new Map<string,WireSample>();
  const sampleTimes=new Map<string,number>();
+ // A timeout is announced once per source sample, even when no browser is open.
+ const staleNotified=new Set<string>();
  const MAX_SOURCE_TAGS=8192;
  const pong=new WeakMap<WebSocket,number>();
  let sourceTicks=0,droppedClients=0,closed=false;
@@ -49,7 +51,7 @@ export function createTagHub(opts:{
  });
  function resetSource(source:'DEMO'|'MODBUS_LAB'|'MODBUS_TCP'):void{
   sourceKind=source;
-  samples.clear();sampleTimes.clear();
+  samples.clear();sampleTimes.clear();staleNotified.clear();
   alarmReset?.();
   trendReset?.();
   for(const ws of clients.keys())emit(ws,{type:'source-reset',source});
@@ -73,6 +75,7 @@ export function createTagHub(opts:{
   if(!prior&&samples.size>=MAX_SOURCE_TAGS)throw Error('Source tag quota exceeded');
   samples.set(sample.tagId,{...sample});
   sampleTimes.set(sample.tagId,Date.now());
+  staleNotified.delete(sample.tagId);
   alarmObserver?.(sample);
   trendObserver?.(sample);
   for(const ws of index.get(sample.tagId)??[])emit(ws,{type:'sample',sample});
@@ -115,6 +118,17 @@ export function createTagHub(opts:{
  });
  const heartbeat=setInterval(()=>{
   const now=Date.now();
+  // Propagate missing acquisition data to the server alarm/historian engines,
+  // not just to late WebSocket subscribers. Never reuse a wire sequence number
+  // as if a new PLC reading arrived.
+  for(const [tagId,cached] of samples){
+   if(staleNotified.has(tagId)||now-(sampleTimes.get(tagId)??now)<staleMs)continue;
+   staleNotified.add(tagId);
+   if(cached.quality==='STALE')continue;
+   const expired:WireSample={...cached,value:null,quality:'STALE'};
+   alarmObserver?.(expired);
+   trendObserver?.(expired);
+  }
   for(const ws of clients.keys()){
    if(now-(pong.get(ws)??0)>heartbeatMs*4){droppedClients++;ws.terminate();continue;}
    ws.ping();emit(ws,{type:'heartbeat',serverTime:now});

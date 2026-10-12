@@ -132,3 +132,33 @@ test('late subscriber sees expired cached GOOD as STALE, then fresh GOOD after u
   assert.equal(live.sample.value,1);
  }finally{for(const ws of sockets)ws.terminate();await hub.close();}
 });
+
+test('server quality expires once without viewers; fresh updates rearm and reset isolates sources',async()=>{
+ const hub=createTagHub({demo:false,heartbeatMs:100,staleMs:45});
+ const alarms:{tagId:string;quality:string}[]=[];
+ const trends:{tagId:string;quality:string}[]=[];
+ let resets=0;
+ hub.setAlarmObserver(s=>alarms.push(s),()=>{resets++;});
+ hub.setTrendObserver(s=>trends.push(s),()=>{resets++;});
+ try{
+  hub.publish({tagId:'PLC1/Motor',value:1,quality:'GOOD',sequence:1});
+  for(let i=0;i<35&&!alarms.some(s=>s.quality==='STALE');i++)
+   await new Promise(resolve=>setTimeout(resolve,10));
+  assert.deepEqual(alarms.map(s=>s.quality),['GOOD','STALE']);
+  assert.deepEqual(trends.map(s=>s.quality),['GOOD','STALE']);
+  // Don't flood events every heartbeat while the acquisition is absent.
+  await new Promise(resolve=>setTimeout(resolve,220));
+  assert.equal(alarms.filter(s=>s.quality==='STALE').length,1);
+  assert.equal(trends.filter(s=>s.quality==='STALE').length,1);
+  assert.equal(hub.publish({tagId:'PLC1/Motor',value:2,quality:'GOOD',sequence:1}),false);
+  assert.equal(alarms.length,2);
+  hub.publish({tagId:'PLC1/Motor',value:2,quality:'GOOD',sequence:2});
+  for(let i=0;i<35&&alarms.filter(s=>s.quality==='STALE').length<2;i++)
+   await new Promise(resolve=>setTimeout(resolve,10));
+  assert.deepEqual(alarms.map(s=>s.quality),['GOOD','STALE','GOOD','STALE']);
+  hub.resetSource('MODBUS_TCP');
+  assert.equal(resets,2);
+  await new Promise(resolve=>setTimeout(resolve,130));
+  assert.equal(alarms.length,4); // old source cannot expire again after reset
+ }finally{await hub.close();}
+});
