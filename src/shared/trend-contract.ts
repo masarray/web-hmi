@@ -88,11 +88,13 @@ export function createTrendReducer(range:TrendRequest){
   const points:TrendRecord[]=[];
   for(const bin of [...(bags.get(tagId)?.entries()??[])].sort((a,b)=>a[0]-b[0])){
    const b=bin[1];
-   const unique=new Map<number,TrendRecord>();
+   // Do not collapse GOOD → STALE → GOOD transitions sharing one millisecond.
+   // Deduplicate only references chosen by more than one summary slot.
+   const unique=new Set<TrendRecord>();
    for(const p of [b.first,b.min,b.max,b.bad,b.last]){
-    if(p)unique.set(p.t,p);
+    if(p)unique.add(p);
    }
-   points.push(...[...unique.values()].sort((a,b)=>a.t-b.t));
+   points.push(...[...unique].sort((a,b)=>a.t-b.t));
   }
   return {tagId,points};
  })});

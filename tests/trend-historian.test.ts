@@ -154,3 +154,18 @@ test('historian HTTP requires admin+allowed Origin, server broadcasts samples on
   })).status,400);
  }finally{historian.close();await runtime.stop();await hub.close();}
 });
+
+test('sub-millisecond source loss remains a visible gap in downsampled history',()=>{
+ const t=base-1000;
+ const sameTime=[
+  record(t,tags[0]!,32,'GOOD'),
+  {t,tagId:tags[0]!,v:null,q:'STALE' as const},
+  record(t,tags[0]!,33,'GOOD')
+ ];
+ const history=downsampleTrend(sameTime,{
+  tags:[tags[0]!],from:t-100,to:t+100,maxPoints:40
+ });
+ assert.deepEqual(history.series[0]!.points.map(p=>p.q),
+  ['GOOD','STALE','GOOD']);
+ assert.deepEqual(history.series[0]!.points.map(p=>p.v),[32,null,33]);
+});
