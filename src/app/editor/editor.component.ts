@@ -519,14 +519,17 @@ export class EditorComponent implements OnDestroy {
   async loadTrends():Promise<void>{
     if(this.trendBusy())return;
     this.trendBusy.set(true);
+    let loadChart=false;
     try{
       const response=await this.trendRequest<TrendStatus>('');
       this.trendStatus.set(response);
       this.trendDraft.set(response.config);
       this.trendMessage.set('Historian connected');
-      if(response.config.tags.length)void this.loadTrendChart();
+      loadChart=response.config.tags.length>0;
     }catch(error){this.trendMessage.set('Unable to connect: '+String(error));}
     finally{this.trendBusy.set(false);}
+    // Fetch only after the status request has released its busy guard.
+    if(loadChart)void this.loadTrendChart(false);
   }
   setTrendCandidate(event:Event):void{
     this.trendCandidate.set((event.target as HTMLInputElement|HTMLSelectElement).value);
