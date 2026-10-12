@@ -7,6 +7,8 @@ import {restoreActiveModbusConfig,persistActiveModbusConfig} from './active-devi
 import {restoreFleet,saveFleet} from './active-fleet-config.ts';
 import {AlarmEngine} from './alarm-engine.ts';
 import {loadAlarmFiles,makeAlarmFileStore} from './alarm-persistence.ts';
+import {TrendHistorian} from './trend-historian.ts';
+import {createTrendFileStore} from './trend-storage.ts';
 
 const port=Number(process.env['HMI_PORT']??8787);
 if(!Number.isInteger(port)||port<1||port>65535)throw Error('Bad HMI_PORT');
@@ -22,7 +24,10 @@ const activeSource=storedFleet?'MODBUS_TCP':initial?
  (process.env['HMI_SOURCE']==='modbus-lab'?'MODBUS_LAB':'MODBUS_TCP'):'DEMO';
 const hub=createTagHub({demo:!initial&&!storedFleet,source:activeSource,allowedOrigins});
 const alarms=new AlarmEngine(makeAlarmFileStore(),Date.now,loadAlarmFiles());
+const trendFiles=createTrendFileStore();
+const trends=new TrendHistorian(trendFiles.store,Date.now,trendFiles.restore());
 hub.setAlarmObserver(sample=>alarms.observe(sample),()=>alarms.sourceReset());
+hub.setTrendObserver(sample=>trends.observe(sample),()=>trends.sourceReset());
 const runtime=new DeviceRuntime(hub,undefined,persistActiveModbusConfig);
 const fleet=new DeviceFleetRuntime(hub,undefined,saveFleet,async()=>runtime.stop());
 if(token){
@@ -31,7 +36,7 @@ if(token){
    'http://127.0.0.1:4200','http://localhost:4200',
    'http://127.0.0.1:8787','http://localhost:8787'
   ]
- },fleet,alarms));
+ },fleet,alarms,trends));
 }
 hub.http.listen(port,'127.0.0.1',()=>{
  if(initial)runtime.startInitial(initial);
@@ -46,6 +51,6 @@ for(const sig of ['SIGINT','SIGTERM'] as const)
  process.on(sig,()=>{
   if(shuttingDown)return;
   shuttingDown=true;
-  void (async()=>{await fleet.stop();await runtime.stop();await hub.close();process.exit(0);})()
+  void (async()=>{await fleet.stop();await runtime.stop();trends.close();await hub.close();process.exit(0);})()
    .catch(error=>{console.error(error);process.exitCode=1;});
  });

@@ -5,6 +5,8 @@ import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
 import {TagStreamClient,type StreamStatus} from './tag-stream-client';
+import {validateTrendConfig,type TrendConfig,type TrendStatus,
+ type TrendResult} from '../../shared/trend-contract.ts';
 import {validateAlarmConfig,type AlarmRule,type AlarmSnapshot,
  type AlarmCondition,type AlarmSeverity} from '../../shared/alarm-contract.ts';
 import {CB_ROTATING,parseDynamicSymbol,findDynamicSymbol,resolveDynamicState,
@@ -138,6 +140,38 @@ export class EditorComponent implements OnDestroy {
     this.activePage().shapes.find(s=>s.id===this.selectedId())??null);
   readonly preview=signal<DragPreview|null>(null);
   readonly dragOffsets=signal<Record<string,{x:number;y:number}>>({});
+  readonly trendOpen=signal(false);
+  readonly trendBusy=signal(false);
+  readonly trendMessage=signal('Connect to configure trends');
+  readonly trendStatus=signal<TrendStatus|null>(null);
+  readonly trendDraft=signal<TrendConfig>({tags:[],sampleMs:2000,retentionDays:3});
+  readonly trendData=signal<TrendResult|null>(null);
+  readonly trendMinutes=signal<15|60|360|1440>(60);
+  readonly trendCandidate=signal('');
+  readonly trendGraph=computed(()=>{
+    const source=this.trendData();
+    if(!source)return {min:0,max:1,lines:[] as {id:string;color:string;path:string}[]};
+    const values=source.series.flatMap(series=>series.points
+      .filter(p=>p.q==='GOOD'&&p.v!==null).map(p=>Number(p.v)));
+    const min=values.length?Math.min(...values):0;
+    const max=values.length?Math.max(...values):1;
+    const span=Math.max(1e-9,max-min);
+    const colors=['#65d4ec','#f5be75','#a6e2ad','#b4a4ef',
+      '#ed829e','#e0d386','#76b2ed','#c7d1df'];
+    return {min,max,lines:source.series.map((series,i)=>{
+      let path='',drawing=false;
+      for(const point of series.points){
+        if(point.q!=='GOOD'||point.v===null){drawing=false;continue;}
+        const x=48+(point.t-source.from)/(source.to-source.from)*870;
+        const y=260-(Number(point.v)-min)/span*228;
+        if(!Number.isFinite(x)||!Number.isFinite(y))continue;
+        path+=(drawing?' L':'M')+x.toFixed(2)+' '+y.toFixed(2);
+        drawing=true;
+      }
+      return {id:series.tagId,color:colors[i%colors.length]!,path};
+    })};
+  });
+  private trendTimer:ReturnType<typeof setInterval>|null=null;
   readonly alarmOpen=signal(false);
   readonly alarmBusy=signal(false);
   readonly alarmMessage=signal('Connect with your server key to view alarms');
@@ -235,6 +269,7 @@ export class EditorComponent implements OnDestroy {
   toggleMapping():void{
     if(this.previewMode())return;
     if(!this.mappingOpen()&&this.alarmOpen())this.toggleAlarmCenter();
+    if(!this.mappingOpen()&&this.trendOpen())this.toggleTrends();
     this.mappingOpen.update(open=>!open);
     if(!this.mappingOpen())this.stopDeviceMonitor();
   }
@@ -439,11 +474,123 @@ export class EditorComponent implements OnDestroy {
       this.deviceDiagnostics.set(null);
     }
   }
+  toggleTrends():void{
+    const open=!this.trendOpen();
+    if(open){
+      if(this.mappingOpen())this.toggleMapping();
+      if(this.alarmOpen())this.toggleAlarmCenter();
+      this.trendOpen.set(true);
+      if(this.adminToken().length>=32)void this.loadTrends();
+      this.startTrendTimer();
+    }else{
+      this.trendOpen.set(false);
+      this.stopTrendTimer();
+    }
+  }
+  private stopTrendTimer():void{
+    if(this.trendTimer!==null)clearInterval(this.trendTimer);
+    this.trendTimer=null;
+  }
+  private startTrendTimer():void{
+    if(this.trendTimer!==null)return;
+    this.trendTimer=setInterval(()=>{
+      if(this.trendOpen()&&this.trendMinutes()===15&&
+        this.trendData()&&!this.trendBusy()&&this.adminToken().length>=32)
+        void this.loadTrendChart(false);
+    },10000);
+  }
+  private trendUrl(path=''):string{
+    const port=location.port==='4200'?':8787':'';
+    return location.protocol+'//'+location.hostname+port+'/api/trends'+path;
+  }
+  private async trendRequest<T>(path:string,body?:unknown):Promise<T>{
+    if(this.adminToken().length<32)throw Error('Enter the server access key');
+    const response=await fetch(this.trendUrl(path),{
+      method:body===undefined?'GET':'POST',
+      mode:'cors',credentials:'omit',signal:AbortSignal.timeout(30000),
+      headers:{Authorization:'Bearer '+this.adminToken(),
+        ...(body===undefined?{}:{'Content-Type':'application/json'})},
+      ...(body===undefined?{}:{body:JSON.stringify(body)})
+    });
+    const data=await response.json() as T & {error?:string};
+    if(!response.ok)throw Error(data.error??('Server HTTP '+response.status));
+    return data;
+  }
+  async loadTrends():Promise<void>{
+    if(this.trendBusy())return;
+    this.trendBusy.set(true);
+    let loadChart=false;
+    try{
+      const response=await this.trendRequest<TrendStatus>('');
+      this.trendStatus.set(response);
+      this.trendDraft.set(response.config);
+      this.trendMessage.set('Historian connected');
+      loadChart=response.config.tags.length>0;
+    }catch(error){this.trendMessage.set('Unable to connect: '+String(error));}
+    finally{this.trendBusy.set(false);}
+    // Fetch only after the status request has released its busy guard.
+    if(loadChart)void this.loadTrendChart(false);
+  }
+  setTrendCandidate(event:Event):void{
+    this.trendCandidate.set((event.target as HTMLInputElement|HTMLSelectElement).value);
+  }
+  addTrendTag():void{
+    const id=this.trendCandidate().trim();
+    const current=this.trendDraft();
+    if(!id||current.tags.includes(id)||current.tags.length>=8)return;
+    try{
+      const next=validateTrendConfig({...current,tags:[...current.tags,id]});
+      this.trendDraft.set(next);this.trendCandidate.set('');
+    }catch(error){this.trendMessage.set(String(error));}
+  }
+  removeTrendTag(id:string):void{
+    this.trendDraft.update(prev=>({...prev,tags:prev.tags.filter(t=>t!==id)}));
+  }
+  changeTrendSetting(field:'sampleMs'|'retentionDays',event:Event):void{
+    const value=Number((event.target as HTMLSelectElement).value);
+    this.trendDraft.update(prev=>({...prev,[field]:value}));
+  }
+  changeTrendWindow(event:Event):void{
+    const value=Number((event.target as HTMLSelectElement).value);
+    if(value===15||value===60||value===360||value===1440)
+      this.trendMinutes.set(value);
+  }
+  async saveTrendConfig():Promise<void>{
+    const status=this.trendStatus();
+    if(!status||this.trendBusy())return;
+    this.trendBusy.set(true);
+    try{
+      const safe=validateTrendConfig(this.trendDraft());
+      const next=await this.trendRequest<TrendStatus>('/config',{
+        revision:status.revision,...safe
+      });
+      this.trendStatus.set(next);this.trendDraft.set(next.config);
+      this.trendData.set(null);
+      this.trendMessage.set('Recording settings saved');
+    }catch(error){this.trendMessage.set('Cannot save: '+String(error));}
+    finally{this.trendBusy.set(false);}
+  }
+  async loadTrendChart(showMessage=true):Promise<void>{
+    const settings=this.trendStatus();
+    if(!settings?.config.tags.length||this.trendBusy())return;
+    this.trendBusy.set(true);
+    try{
+      const to=Date.now();
+      const result=await this.trendRequest<TrendResult>('/query',{
+        tags:settings.config.tags,from:to-this.trendMinutes()*60000,
+        to,maxPoints:400
+      });
+      this.trendData.set(result);
+      if(showMessage)this.trendMessage.set('Chart updated');
+    }catch(error){this.trendMessage.set('Chart unavailable: '+String(error));}
+    finally{this.trendBusy.set(false);}
+  }
   toggleAlarmCenter():void{
     const show=!this.alarmOpen();
     this.alarmOpen.set(show);
     if(show){
       if(this.mappingOpen())this.toggleMapping();
+      if(this.trendOpen())this.toggleTrends();
       if(this.adminToken().length>=32)void this.refreshAlarms();
       this.startAlarmTimer();
     }else this.stopAlarmTimer();
@@ -548,6 +695,7 @@ export class EditorComponent implements OnDestroy {
     this.deviceProbeStatus.set('');
     this.alarms.set(null);
     this.alarmDraft.set([]);
+    this.trendStatus.set(null);this.trendData.set(null);
   }
   private deviceApiUrl(path:'status'|'apply'|'test'):string{
     // Dev serves Angular on :4200; production should proxy /api/device on the
@@ -689,6 +837,7 @@ export class EditorComponent implements OnDestroy {
     else this.tagStream.stop();
   });
   ngOnDestroy():void{
+    this.stopTrendTimer();
     this.stopAlarmTimer();
     this.stopDeviceMonitor();
     this.tagStream.stop();
@@ -1077,6 +1226,7 @@ export class EditorComponent implements OnDestroy {
   }
   togglePreview():void {
     if(this.alarmOpen())this.toggleAlarmCenter();
+    if(this.trendOpen())this.toggleTrends();
     if(this.mappingOpen())this.mappingOpen.set(false);
     if(this.symbolBuilderOpen())this.symbolBuilderOpen.set(false);
     this.previewMode.update(v=>!v);

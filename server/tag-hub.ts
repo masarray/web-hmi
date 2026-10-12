@@ -12,6 +12,7 @@ export interface TagHub {
  stopDemo:()=>void;
  setControlHandler:(handler:(req:IncomingMessage,res:ServerResponse)=>boolean)=>void;
  setAlarmObserver:(observer:(sample:WireSample)=>void,onReset:()=>void)=>void;
+ setTrendObserver:(observer:(sample:WireSample)=>void,onReset:()=>void)=>void;
  close:()=>Promise<void>;
 }
 /** One source and one acquisition stream fan out across all browser subscribers. */
@@ -36,6 +37,8 @@ export function createTagHub(opts:{
  let controlHandler:((req:IncomingMessage,res:ServerResponse)=>boolean)|null=null;
  let alarmObserver:((sample:WireSample)=>void)|null=null;
  let alarmReset:(()=>void)|null=null;
+ let trendObserver:((sample:WireSample)=>void)|null=null;
+ let trendReset:(()=>void)|null=null;
  const http=createServer((req,res)=>{
   if(controlHandler?.(req,res))return;
   if(req.method==='GET'&&req.url==='/health'){
@@ -48,6 +51,7 @@ export function createTagHub(opts:{
   sourceKind=source;
   samples.clear();sampleTimes.clear();
   alarmReset?.();
+  trendReset?.();
   for(const ws of clients.keys())emit(ws,{type:'source-reset',source});
  }
  const wss=new WebSocketServer({noServer:true,maxPayload:32768,perMessageDeflate:false});
@@ -70,6 +74,7 @@ export function createTagHub(opts:{
   samples.set(sample.tagId,{...sample});
   sampleTimes.set(sample.tagId,Date.now());
   alarmObserver?.(sample);
+  trendObserver?.(sample);
   for(const ws of index.get(sample.tagId)??[])emit(ws,{type:'sample',sample});
   return true;
  }
@@ -130,7 +135,8 @@ export function createTagHub(opts:{
  return {http,publish,resetSource,stopDemo:()=>{if(sourceTimer)clearInterval(sourceTimer);
   sourceTimer=undefined;},
  setControlHandler:handler=>{controlHandler=handler;},
- setAlarmObserver:(observer,onReset)=>{alarmObserver=observer;alarmReset=onReset;},metrics:()=>({
+ setAlarmObserver:(observer,onReset)=>{alarmObserver=observer;alarmReset=onReset;},
+ setTrendObserver:(observer,onReset)=>{trendObserver=observer;trendReset=onReset;},metrics:()=>({
   clients:clients.size,subscriptions:[...index.values()].reduce((n,set)=>n+set.size,0),
   sourceTicks,droppedClients
  }),close:async()=>{

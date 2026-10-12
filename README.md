@@ -90,3 +90,9 @@ Open **Alarms** for live conditions, acknowledge, and recent events. Engineers
 can add threshold rules under the collapsible settings area. Server-side
 processing follows tag quality and preserves alarms during connection loss.
 See [CP-14](docs/architecture/CP14.md).
+
+## Trends & Historian (CP-15)
+
+Use **Trends** to select PLC tags to record and view 15-minute to 24-hour
+SVG history. The Node server records configured tags independently of browser
+sessions. [CP-15 architecture and limits](docs/architecture/CP15.md).

@@ -9,6 +9,8 @@
       @if(selected() && !previewMode()){
         <button type="button" (click)="duplicateSelected()" aria-label="Duplicate selected object" title="Duplicate selected object (Ctrl+D)">⧉ Duplicate</button>
       }
+      <button type="button" aria-label="Open trends" [class.on]="trendOpen()"
+        (click)="toggleTrends()">⌁ Trends</button>
       <button type="button" aria-label="Open alarms" [class.on]="alarmOpen()"
         (click)="toggleAlarmCenter()">⚑ Alarms
         @if(alarmUnacknowledged()){<span class="alarm-count">{{alarmUnacknowledged()}}</span>}
@@ -142,6 +144,101 @@
     </aside>
 
     <main class="center">
+      @if(trendOpen()){
+        <section class="trend-panel" data-testid="trend-center" aria-label="Trends and historian">
+          <div class="trend-head">
+            <div><strong>Trends</strong><span>PLC history and live values</span></div>
+            <button type="button" (click)="toggleTrends()" aria-label="Close trends">✕ Close</button>
+          </div>
+          <div class="trend-toolbar">
+            <label>Server key
+              <input type="password" aria-label="Trend server token" autocomplete="off"
+                [value]="adminToken()" (input)="setAdminToken($event)" placeholder="Server access key">
+            </label>
+            <button type="button" (click)="loadTrends()" [disabled]="trendBusy()||adminToken().length<32">Connect</button>
+            @if(trendStatus()){
+              <label>Period
+                <select aria-label="Trend time range" [value]="trendMinutes()"
+                  (change)="changeTrendWindow($event)">
+                  <option [value]="15">15 minutes · Live</option>
+                  <option [value]="60">1 hour</option>
+                  <option [value]="360">6 hours</option>
+                  <option [value]="1440">24 hours</option>
+                </select>
+              </label>
+              <button type="button" (click)="loadTrendChart()"
+                [disabled]="trendBusy()||!trendStatus()?.config?.tags?.length">Refresh chart</button>
+            }
+          </div>
+          @if(trendStatus();as status){
+            <div class="trend-plot-wrap">
+              <svg class="trend-plot" role="img" aria-label="Historical PLC tag trend chart"
+                viewBox="0 0 960 300" preserveAspectRatio="none">
+                <rect x="47" y="28" width="871" height="234" fill="#0e202b" stroke="#345264"/>
+                <path d="M47 86H918M47 144H918M47 202H918" stroke="#2b4453" stroke-dasharray="3 6" fill="none"/>
+                @for(line of trendGraph().lines;track line.id){
+                  <path [attr.d]="line.path" [attr.stroke]="line.color" fill="none"
+                    stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+                }
+                <text x="8" y="36" fill="#abc5d1" font-size="12">{{trendGraph().max.toFixed(1)}}</text>
+                <text x="8" y="259" fill="#abc5d1" font-size="12">{{trendGraph().min.toFixed(1)}}</text>
+                <text x="48" y="286" fill="#abc5d1" font-size="12">Past</text>
+                <text x="885" y="286" fill="#abc5d1" font-size="12">Now</text>
+              </svg>
+              @if(!trendData()||!trendData()?.scanned){
+                <div class="trend-no-data">
+                  {{status.config.tags.length?'No recorded values in this period yet':'Choose tags to begin recording'}}
+                </div>
+              }
+              <div class="trend-legend">
+                @for(line of trendGraph().lines;track line.id){
+                  <span><i [style.background]="line.color"></i>{{line.id}}</span>
+                }
+              </div>
+            </div>
+            <details class="trend-settings">
+              <summary>Recording settings · {{trendDraft().tags.length}} tags</summary>
+              <p>Choose up to 8 tags. Recording continues on the server even when Studio is closed.</p>
+              <div class="trend-tags">
+                @for(tag of trendDraft().tags;track tag){
+                  <span>{{tag}} <button type="button" [attr.aria-label]="'Remove trend '+tag"
+                    (click)="removeTrendTag(tag)">✕</button></span>
+                }
+              </div>
+              <div class="trend-add">
+                <input list="trend-tag-options" aria-label="Trend tag ID"
+                  [value]="trendCandidate()" (input)="setTrendCandidate($event)"
+                  placeholder="Choose tag ID">
+                <datalist id="trend-tag-options">
+                  @for(tag of availableMappingTags();track tag.id){<option [value]="tag.id">{{tag.label}}</option>}
+                </datalist>
+                <button type="button" (click)="addTrendTag()"
+                  [disabled]="trendDraft().tags.length>=8||!trendCandidate()">＋ Add tag</button>
+                <label>Every
+                  <select aria-label="Trend sample interval" [value]="trendDraft().sampleMs"
+                    (change)="changeTrendSetting('sampleMs',$event)">
+                    <option value="1000">1 second</option>
+                    <option value="2000">2 seconds</option>
+                    <option value="5000">5 seconds</option>
+                    <option value="10000">10 seconds</option>
+                  </select>
+                </label>
+                <label>Keep for
+                  <select aria-label="Trend retention days" [value]="trendDraft().retentionDays"
+                    (change)="changeTrendSetting('retentionDays',$event)">
+                    <option value="1">1 day</option><option value="3">3 days</option>
+                    <option value="7">7 days</option>
+                  </select>
+                </label>
+                <button type="button" class="trend-save" (click)="saveTrendConfig()"
+                  [disabled]="trendBusy()">Save recording</button>
+              </div>
+            </details>
+            @if(status.storageError){<p class="trend-error" role="alert">Historian: {{status.storageError}}</p>}
+          }
+          <p class="trend-message" role="status">{{trendMessage()}}</p>
+        </section>
+      }
       @if(alarmOpen()){
         <section class="alarm-panel" data-testid="alarm-center" aria-label="Alarm and event center">
           <header class="alarm-head">
