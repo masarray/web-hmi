@@ -21,3 +21,8 @@ config/alarm-rules.json
 config/alarm-rules.json.tmp-*
 config/alarm-events.jsonl
 config/alarm-events.previous.jsonl
+
+# Historian site tag settings and daily history
+config/historian-config.json
+config/historian-config.json.tmp-*
+config/historian/
