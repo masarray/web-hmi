@@ -93,7 +93,7 @@ test('New Symbol is neutral and closed-state dragging preserves its rotation ove
   await page.getByRole('button',{name:'New Symbol'}).click();
   await expect(page.getByRole('textbox',{name:'Symbol name'})).toHaveValue('Untitled Symbol');
   await expect(page.locator('.studio-object')).toHaveCount(1);
-  await expect(page.locator('[data-node-id=starter-line] line').first()).toBeVisible();
+  await expect(page.locator('[data-node-id=starter-line] line').first()).toHaveAttribute('x2','70');
   await page.getByRole('button',{name:'Edit state Closed'}).click();
   const rotation=page.getByRole('spinbutton',{name:'Studio rotation'});
   await rotation.fill('45');
