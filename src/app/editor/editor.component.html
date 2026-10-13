@@ -578,6 +578,32 @@
         <button type="button" (click)="zoomBy(0.1)">＋</button>
         <button type="button" (click)="zoom.set(1)" title="Reset zoom to 100%">100%</button>
       </div>
+      @if(!previewMode() && (wirePair() || wires().length)){
+        <div class="wire-connection-bar" aria-label="Electrical port wiring" data-testid="wire-connection-bar">
+          <strong>PORT WIRES</strong>
+          @if(wirePair();as pair){
+            <span>From {{pair.fromShape.name}}</span>
+            <select aria-label="Wire from port" [value]="wireFromPort() || pair.fromPorts[0]"
+              (change)="wireFromPort.set($any($event.target).value)">
+              @for(port of pair.fromPorts;track port){<option [value]="port">{{port}}</option>}
+            </select>
+            <span>to {{pair.toShape.name}}</span>
+            <select aria-label="Wire to port" [value]="wireToPort() || pair.toPorts[0]"
+              (change)="wireToPort.set($any($event.target).value)">
+              @for(port of pair.toPorts;track port){<option [value]="port">{{port}}</option>}
+            </select>
+            <button type="button" aria-label="Connect selected electrical ports"
+              (click)="connectSelectedPorts()">⊕ Connect</button>
+          } @else {
+            <span>Select two V2 symbols using Shift+click to connect their electrical ports.</span>
+          }
+          @for(wire of wires();track wire.id){
+            <button type="button" class="wire-chip" [attr.aria-label]="'Remove wire '+wire.id"
+              [title]="wire.from.shapeId+' / '+wire.from.portId+' → '+wire.to.shapeId+' / '+wire.to.portId"
+              (click)="removeWire(wire.id)">Wire {{$index+1}} ×</button>
+          }
+        </div>
+      }
       @if(previewMode()){
         <div class="simulation-bar" data-testid="simulation-bar">
           <strong>{{previewSource()==='local'?'SIMULATION ONLY':serverKind()==='MODBUS_LAB'?'MODBUS LAB · READ ONLY':serverKind()==='MODBUS_TCP'?'MODBUS TCP · READ ONLY':'SERVER DEMO · READ ONLY'}}</strong>
@@ -634,6 +660,16 @@
             <rect width="1200" height="700" fill="#10202c"/>
             @if(gridVisible() && !previewMode()){
               <rect width="1200" height="700" fill="url(#canvas-grid)" pointer-events="none"/>
+            }
+            @for(wire of wires();track wire.id){
+              <g class="attached-wire" [attr.data-wire-id]="wire.id" pointer-events="none">
+                <path [attr.d]="wire.d" stroke="#81c8e3" stroke-width="3.2"
+                  stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <circle [attr.cx]="wire.fromPoint[0]" [attr.cy]="wire.fromPoint[1]"
+                  r="3.3" fill="#e9c681"/>
+                <circle [attr.cx]="wire.toPoint[0]" [attr.cy]="wire.toPoint[1]"
+                  r="3.3" fill="#e9c681"/>
+              </g>
             }
             @for(shape of activePage().shapes;track shape.id){
               <g class="canvas-node" [attr.data-shape-id]="shape.id"
