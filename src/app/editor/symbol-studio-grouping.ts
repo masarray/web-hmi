@@ -104,7 +104,7 @@ export function ungroupVectorNode(doc:VectorSymbol,id:string):VectorSymbol{
     const transform=transformFromAffine(
       product(transformMatrix(original.transform),transformMatrix(child.transform)),
       child.transform.pivot);
-    const rewritten={...child,transform} as VectorNode;
+    const rewritten={...child,transform,visible:original.visible&&child.visible} as VectorNode;
     baseChildren.set(child.id,rewritten);
     return rewritten;
   });
@@ -122,7 +122,7 @@ export function ungroupVectorNode(doc:VectorSymbol,id:string):VectorSymbol{
       const baseVisibility=original.visible&&child.visible;
       const activeVisibility=(parentOverride?.visible??original.visible)&&
         (originalOverride.visible??child.visible);
-      const updated:NodeOverride={...originalOverride};
+      const updated:{-readonly [K in keyof NodeOverride]:NodeOverride[K]}={...originalOverride};
       if(!eq(effective,rebasedBase))updated.transform=effective;
       else delete (updated as {transform?:unknown}).transform;
       if(activeVisibility!==baseVisibility)updated.visible=activeVisibility;
