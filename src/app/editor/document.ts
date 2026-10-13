@@ -3,6 +3,8 @@ import {findSymbol} from './symbols.ts';
 import type {VisualRule,PartRule} from './visual-runtime.ts';
 import {findProcessGraphic} from './process-graphics.ts';
 import {parseDynamicSymbol,findDynamicSymbol,type DynamicSymbol,type PointMode} from './dynamic-symbol.ts';
+import {parseVectorSymbolJson,type VectorSymbol} from './symbol-studio-model.ts';
+import {vectorSymbolIdAllowed,symbolDimensions} from './vector-runtime.ts';
 export type AnimationMode='none'|'spin'|'pulse';
 export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'text' | 'breaker' | 'symbol';
 export interface Shape {
@@ -23,6 +25,8 @@ export interface Project {
   schemaVersion:1; id:string; name:string; activePageId:string; pages:Page[];
   /** Optional for v1 compatibility; imported symbol geometry travels with project. */
   customSymbols?:DynamicSymbol[];
+  /** Independent V2 catalog: composable vector nodes and per-element visual states. */
+  vectorSymbols?:VectorSymbol[];
 }
 const kinds:ReadonlySet<string> = new Set(['rect','ellipse','line','text','breaker','symbol']);
 const idPattern=/^[A-Za-z0-9_-]{1,80}$/;
@@ -72,6 +76,21 @@ export function isShape(v:unknown):v is Shape {
     (v.partRules===undefined||validPartRules(v.partRules,v.symbolId)) &&
     (v.pointMode===undefined||v.pointMode==='single-point'||v.pointMode==='double-point');
 }
+function valueVectorSymbols(value:unknown,legacyIds:ReadonlySet<string>):VectorSymbol[] {
+  if(value===undefined)return [];
+  if(!Array.isArray(value)||value.length>128)throw Error('Invalid V2 symbol catalog');
+  const seen=new Set<string>();
+  return value.map(raw=>{
+    const serialized=JSON.stringify(raw);
+    if(!serialized||serialized.length>131072)throw Error('V2 symbol exceeds 128 KiB');
+    const def=parseVectorSymbolJson(serialized);
+    if(!vectorSymbolIdAllowed(def.id)||seen.has(def.id)||legacyIds.has(def.id)||
+      !!findSymbol(def.id)||!!findDynamicSymbol(def.id))
+      throw Error('Duplicate or reserved V2 symbol ID');
+    seen.add(def.id);
+    return def;
+  });
+}
 function valueSymbols(value:unknown):DynamicSymbol[] {
   if(value===undefined)return [];
   if(!Array.isArray(value)||value.length>128)throw Error('Invalid custom symbol catalog');
@@ -92,6 +111,8 @@ export function parseProject(v:unknown):Project {
     throw new Error('Invalid or unsupported HMI project format');
   const customSymbols:DynamicSymbol[]=valueSymbols(v.customSymbols);
   const customIds=new Set(customSymbols.map(s=>s.id));
+  const vectorSymbols=valueVectorSymbols(v.vectorSymbols,customIds);
+  const vectorIds=new Set(vectorSymbols.map(s=>s.id));
   const pageIds=new Set<string>();
   const pages:Page[]=v.pages.map((raw:unknown)=>{
     if (!obj(raw) || typeof raw.id!=='string' ||
@@ -103,7 +124,7 @@ export function parseProject(v:unknown):Project {
     const shapes:Shape[]=raw.shapes.map((s:unknown)=>{
       if (!isShape(s) || shapeIds.has(s.id)||
         (s.kind==='symbol'&&typeof s.symbolId==='string'&&
-          customSymbolId.test(s.symbolId)&&!customIds.has(s.symbolId)))
+          customSymbolId.test(s.symbolId)&&!customIds.has(s.symbolId)&&!vectorIds.has(s.symbolId)))
         throw new Error('Invalid or duplicate HMI shape');
       shapeIds.add(s.id);
       return {id:s.id,kind:s.kind,name:s.name,x:s.x,y:s.y,
@@ -122,7 +143,8 @@ export function parseProject(v:unknown):Project {
   });
   if (!pageIds.has(v.activePageId)) throw new Error('Active page not found');
   return {schemaVersion:1,id:v.id,name:v.name,activePageId:v.activePageId,pages,
-    ...(v.customSymbols!==undefined?{customSymbols}:{})};
+    ...(v.customSymbols!==undefined?{customSymbols}:{}),
+    ...(v.vectorSymbols!==undefined?{vectorSymbols}:{})};
 }
 export function initialProject():Project {
   const shape=(id:string,kind:ShapeKind,name:string,x:number,y:number,
@@ -190,4 +212,11 @@ export function createPage(p:Project):Project {
   const id=makeId('page');
   return {...p,activePageId:id,
     pages:[...p.pages,{id,name:'Page '+(p.pages.length+1),shapes:[]}]};
+}
+
+/** One source definition, many independently positioned and tag-bound instances. */
+export function newVectorInstance(def:VectorSymbol,count:number):Shape{
+  const [width,height]=symbolDimensions(def);
+  return {...newShape('rect',count),kind:'symbol',symbolId:def.id,name:def.name,
+    width,height,pointMode:'double-point',animation:'none'};
 }

@@ -1,5 +1,5 @@
 import {ChangeDetectionStrategy,Component,ElementRef,HostListener,ViewChild,
-  computed,output,signal} from '@angular/core';
+  computed,output,input,effect,signal} from '@angular/core';
 import {CB_ROTATING} from './dynamic-symbol.ts';
 import {migrateDynamicSymbolV1,parseVectorSymbolJson,parseVectorSymbol,
   indexVectorNodes,type VectorSymbol,type VectorNode,type Vector2,type VectorStyle,
@@ -52,6 +52,27 @@ function effective(node:VectorNode,state:VectorState|null):{
 })
 export class SymbolStudioComponent {
   readonly closed=output<void>();
+  readonly savedToLibrary=output<VectorSymbol>();
+  readonly definition=input<VectorSymbol|null>(null);
+  private loadedDefinition:string|null=null;
+  constructor(){
+    effect(()=>{
+      const incoming=this.definition();
+      // Avoid clobbering unsaved edits on unrelated parent UI updates.
+      if(incoming&&this.loadedDefinition!==JSON.stringify(incoming)){
+        this.loadedDefinition=JSON.stringify(incoming);
+        this.history=new SymbolEditHistory(parseVectorSymbol(incoming));
+        this.model.set(this.history.document);
+        // Open an existing symbol with a drawable child selected so the
+        // property Inspector is immediately usable, including nested groups.
+        const first=[...indexVectorNodes(this.history.document).values()]
+          .find(node=>node.kind!=='group');
+        this.selectedId.set(first?.id??null);
+        this.activeState.set('BASE');
+        this.canUndo.set(false);this.canRedo.set(false);this.dirty.set(false);
+      }
+    });
+  }
   @ViewChild('artboard') artboard?:ElementRef<SVGSVGElement>;
   private history=new SymbolEditHistory(restored());
   readonly model=signal<VectorSymbol>(this.history.document);
@@ -338,7 +359,9 @@ export class SymbolStudioComponent {
       const serialized=JSON.stringify(parseVectorSymbol(this.model()));
       if(serialized.length>131072)throw Error('Symbol is too large to save');
       localStorage.setItem(STORAGE,serialized);
-      this.status.set('Saved in this browser · use Export JSON for portability');
+      // Parent owns canonical project catalog and its Undo/Redo/history.
+      this.savedToLibrary.emit(parseVectorSymbol(JSON.parse(serialized) as unknown));
+      this.status.set('Saved to HMI Library and this browser · drag to canvas');
       this.dirty.set(false);
     }catch(err){this.status.set('Save failed: '+String(err));}
   }

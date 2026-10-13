@@ -130,6 +130,20 @@
       } @empty {
         <p class="custom-symbol-empty">Select line objects → Create Dynamic Symbol.</p>
       }
+      <div class="symbol-my-heading">
+        <span>MY VECTOR SYMBOLS · {{(project().vectorSymbols??[]).length}}</span>
+        <button type="button" aria-label="Create V2 Symbol" (click)="openVectorStudio()">✎ Create</button>
+      </div>
+      @for(def of project().vectorSymbols??[];track def.id){
+        <button type="button" class="custom-symbol-item" draggable="true"
+          [attr.aria-label]="'Add V2 '+def.name"
+          (click)="addVectorSymbol(def.id)" (dragstart)="startVectorDrag($event,def.id)"
+          [title]="def.name+' · drag to canvas or click to insert'">
+          <span aria-hidden="true">◇</span><span>{{def.name}}</span><span>＋</span>
+        </button>
+      } @empty {
+        <p class="custom-symbol-empty">Create a symbol in Symbol Studio, then Save to Library.</p>
+      }
       <div class="sidebar-tip">Click or drag symbols onto your HMI. Hold <b>Shift</b> to select multiple objects. Preview animation with the ▶ button.</div>
       <div class="pane-heading with-line">LAYERS <span class="muted">{{activePage().shapes.length}}</span></div>
       <div class="layers">
@@ -623,11 +637,12 @@
             }
             @for(shape of activePage().shapes;track shape.id){
               <g class="canvas-node" [attr.data-shape-id]="shape.id"
-                [attr.data-visual-quality]="previewMode() && shape.kind==='symbol' && shape.tagId ? (dynamicState(shape)?.quality??stateOf(shape)?.quality) : null"
-                [attr.data-visual-status]="previewMode() && shape.kind==='symbol' && shape.tagId ? (dynamicState(shape)?.status??stateOf(shape)?.status) : null"
+                [attr.data-visual-quality]="previewMode() && shape.kind==='symbol' && shape.tagId ? (vectorAppearance(shape)?.frame?.quality??dynamicState(shape)?.quality??stateOf(shape)?.quality) : null"
+                [attr.data-visual-status]="previewMode() && shape.kind==='symbol' && shape.tagId ? (vectorAppearance(shape)?.frame?.status??dynamicState(shape)?.status??stateOf(shape)?.status) : null"
+                [attr.data-vector-state]="vectorAppearance(shape)?.frame?.stateId??null"
                 [attr.data-dynamic-state]="dynamicState(shape)?.state??null"
                 [attr.transform]="'translate('+displayX(shape)+','+displayY(shape)+')'"
-                (pointerdown)="beginDrag($event,shape)">
+                (pointerdown)="beginDrag($event,shape)" (dblclick)="editVectorSymbol(shape)">
                 @switch(shape.kind){
                   @case('rect'){
                     <rect x="0" y="0" [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
@@ -655,7 +670,47 @@
                       [attr.stroke]="shape.stroke" stroke-width="4" fill="none"/>
                   }
                   @case('symbol'){
-                    @if(dynamicSymbol(shape);as def){
+                    @if(vectorSymbol(shape);as def){
+                      @if(vectorAppearance(shape);as appearance){
+                        <svg class="vector-symbol" x="0" y="0"
+                          [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
+                          [attr.viewBox]="'0 0 '+def.viewBox[0]+' '+def.viewBox[1]"
+                          preserveAspectRatio="xMidYMid meet" [attr.data-vector-symbol-id]="def.id">
+                          <rect x="0" y="0" [attr.width]="def.viewBox[0]"
+                            [attr.height]="def.viewBox[1]" fill="transparent"
+                            pointer-events="all"/>
+                          @for(row of appearance.rows;track row.node.id){
+                            <g [attr.data-vector-part]="row.node.id"
+                              [attr.transform]="'matrix('+row.matrix.a+' '+row.matrix.b+' '+row.matrix.c+' '+row.matrix.d+' '+row.matrix.e+' '+row.matrix.f+')'"
+                              [attr.opacity]="row.style.opacity">
+                              @if(row.node.kind==='line'){
+                                <line [attr.x1]="row.node.x1" [attr.y1]="row.node.y1"
+                                  [attr.x2]="row.node.x2" [attr.y2]="row.node.y2"
+                                  [attr.stroke]="row.style.stroke" [attr.stroke-width]="row.style.strokeWidth"
+                                  stroke-linecap="round"/>
+                              } @else if(row.node.kind==='rect'){
+                                <rect [attr.x]="row.node.x" [attr.y]="row.node.y"
+                                  [attr.width]="row.node.width" [attr.height]="row.node.height"
+                                  [attr.fill]="row.style.fill" [attr.stroke]="row.style.stroke"
+                                  [attr.stroke-width]="row.style.strokeWidth"/>
+                              } @else if(row.node.kind==='ellipse'){
+                                <ellipse [attr.cx]="row.node.cx" [attr.cy]="row.node.cy"
+                                  [attr.rx]="row.node.rx" [attr.ry]="row.node.ry"
+                                  [attr.fill]="row.style.fill" [attr.stroke]="row.style.stroke"
+                                  [attr.stroke-width]="row.style.strokeWidth"/>
+                              } @else if(row.node.kind==='path'){
+                                <path [attr.d]="row.node.d" [attr.fill]="row.style.fill"
+                                  [attr.stroke]="row.style.stroke" [attr.stroke-width]="row.style.strokeWidth"/>
+                              } @else if(row.node.kind==='text'){
+                                <text [attr.x]="row.node.x" [attr.y]="row.node.y"
+                                  font-size="8" [attr.fill]="row.style.fill==='none'?row.style.stroke:row.style.fill">
+                                  {{row.text??row.node.text}}</text>
+                              }
+                            </g>
+                          }
+                        </svg>
+                      }
+                    } @else if(dynamicSymbol(shape);as def){
                       <svg class="dynamic-symbol" x="0" y="0"
                         [attr.width]="displayWidth(shape)" [attr.height]="displayHeight(shape)"
                         [attr.viewBox]="'0 0 '+def.viewBox[0]+' '+def.viewBox[1]"
@@ -715,7 +770,20 @@
                   }
                 }
                 @if(previewMode() && shape.kind==='symbol' && shape.tagId){
-                  @if(dynamicState(shape);as dynamic){
+                  @if(vectorAppearance(shape);as vector){
+                    <g class="visual-quality-indicator" pointer-events="none">
+                      <circle [attr.cx]="displayWidth(shape)-5" cy="5" r="6"
+                        [attr.fill]="vector.frame.warning?'#fc7187':'#65d7aa'"
+                        stroke="#111e29" stroke-width="2"/>
+                      @if(vector.frame.warning){
+                        <rect x="-4" y="-4" [attr.width]="displayWidth(shape)+8"
+                          [attr.height]="displayHeight(shape)+8" fill="none"
+                          stroke="#fc7187" stroke-width="2.5" stroke-dasharray="6 4"/>
+                        <text x="0" [attr.y]="displayHeight(shape)+20" fill="#fc7187"
+                          font-size="12" font-weight="600">{{vector.frame.status}}</text>
+                      }
+                    </g>
+                  } @else if(dynamicState(shape);as dynamic){
                     <g class="visual-quality-indicator" pointer-events="none">
                       <circle [attr.cx]="displayWidth(shape)-5" cy="5" r="6"
                         [attr.fill]="dynamic.color" stroke="#111e29" stroke-width="2"/>
@@ -820,7 +888,7 @@
         </div>
         <div class="inspector-section">
           <h3>APPEARANCE</h3>
-          @if(!dynamicSymbol(shape)){
+          @if(!dynamicSymbol(shape) && !vectorSymbol(shape)){
             <div class="field-grid">
               @if(shape.kind!=='symbol' || !processGraphic(shape.symbolId)){
                 <label>Fill<input type="color" [value]="shape.fill" (change)="updateProperty('fill',$event)"></label>
@@ -834,6 +902,22 @@
           @if(shape.kind==='line'){
             <button type="button" class="symbol-builder-action"
               (click)="openSymbolBuilder()">Create Dynamic Symbol from Line</button>
+          }
+          @if(shape.kind==='symbol' && vectorSymbol(shape);as vectorDefinition){
+            <div class="dynamic-symbol-details">
+              <strong>VECTOR SYMBOL V2</strong>
+              <p class="helper">Editable individual part states · {{vectorDefinition.states.length}} states
+                · {{vectorDefinition.nodes.length}} root objects</p>
+              <label>Position encoding
+                <select aria-label="Position encoding" [value]="shape.pointMode??'double-point'"
+                  (change)="setPointMode(shape,$event)">
+                  <option value="single-point">Single point · 0 Open, 1 Closed</option>
+                  <option value="double-point">Double point · 0 Intermediate, 1 Open, 2 Closed, 3 Bad</option>
+                </select>
+              </label>
+              <button type="button" aria-label="Edit V2 in Symbol Studio" (click)="openVectorStudio(shape)">✎ Edit in Symbol Studio</button>
+              <button type="button" aria-label="Download V2 Symbol JSON" (click)="exportVectorSymbol(shape)">⇩ Download symbol JSON</button>
+            </div>
           }
           @if(shape.kind==='symbol' && dynamicSymbol(shape);as dynamicDefinition){
             <div class="dynamic-symbol-details">
@@ -851,7 +935,7 @@
                 {{dynamicDefinition.pivot[0]}}, {{dynamicDefinition.pivot[1]}}</p>
             </div>
           }
-          @if(shape.kind==='symbol' && !dynamicSymbol(shape)){
+          @if(shape.kind==='symbol' && !dynamicSymbol(shape) && !vectorSymbol(shape)){
             <p class="helper">
               @if(processGraphic(shape.symbolId);as definition){
                 Editable vector geometry: {{definition.parts.length}} SVG parts.
@@ -906,7 +990,7 @@
             </label>
           }
           <label>Tag identifier<input type="text" placeholder="Device/Tag" maxlength="160" [value]="shape.tagId" (change)="updateProperty('tagId',$event)"></label>
-          @if(shape.kind==='symbol' && shape.tagId && !dynamicSymbol(shape)){
+          @if(shape.kind==='symbol' && shape.tagId && !dynamicSymbol(shape) && !vectorSymbol(shape)){
             <label>Visual activation rule
               <select aria-label="Visual activation rule" [value]="shape.visualRule??'when-true'"
                 (change)="updateProperty('visualRule',$event)">
@@ -956,5 +1040,6 @@
 </div>
 
 @if(symbolStudioOpen()){
-  <hmi-symbol-studio (closed)="symbolStudioOpen.set(false)"></hmi-symbol-studio>
+  <hmi-symbol-studio [definition]="studioSource()" (savedToLibrary)="saveVectorToLibrary($event)"
+    (closed)="symbolStudioOpen.set(false)"></hmi-symbol-studio>
 }

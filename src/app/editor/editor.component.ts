@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener,
   ViewChild, computed, signal, effect, OnDestroy } from '@angular/core';
 import { Project, Shape, ShapeKind, ShapeEdit, initialProject, parseProject,
-  newShape, newSymbol, insertShape, editShape, deleteShape, createPage } from './document';
+  newShape, newSymbol, newVectorInstance, insertShape, editShape, deleteShape, createPage } from './document';
 import {HMI_SYMBOLS,SYMBOL_CATEGORIES,filterSymbols,findSymbol,type SymbolCategory} from './symbols';
 import {findProcessGraphic,PROCESS_GRAPHIC_COUNT} from './process-graphics';
 import {TagStreamClient,type StreamStatus} from './tag-stream-client';
@@ -21,6 +21,8 @@ import {evaluatePage,evaluatePartAppearance,updateTagSample,
 import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } from './actions';
 import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align, type Axis } from './selection-ops';
 import {SymbolStudioComponent} from './symbol-studio.component';
+import {parseVectorSymbolJson,type VectorSymbol} from './symbol-studio-model';
+import {projectVectorFrame,vectorSymbolIdAllowed,type RenderVectorSymbol} from './vector-runtime';
 
 const STORAGE_KEY='web-hmi.project.v1';
 const MODBUS_KEY='web-hmi.modbus-map.v1';
@@ -188,6 +190,21 @@ export class EditorComponent implements OnDestroy {
   readonly mappingOpen=signal(false);
   readonly symbolBuilderOpen=signal(false);
   readonly symbolStudioOpen=signal(false);
+  readonly studioSource=signal<VectorSymbol|null>(null);
+  readonly vectorCatalog=computed(()=>new Map(
+    (this.project().vectorSymbols??[]).map(def=>[def.id,def] as const)));
+  readonly vectorFrames=computed(()=>{
+    const result=new Map<string,RenderVectorSymbol>();
+    const catalog=this.vectorCatalog();
+    const samples=this.activeSamples(),now=this.freshnessClock();
+    for(const shape of this.activePage().shapes){
+      const def=catalog.get(shape.symbolId??'');
+      if(def)result.set(shape.id,projectVectorFrame(def,
+        shape.pointMode??'double-point',samples.get(shape.tagId),
+        now,this.previewMode(),!!shape.tagId));
+    }
+    return result;
+  });
   readonly symbolBuilderName=signal('My Circuit Breaker');
   readonly symbolBuilderMoving=signal('');
   readonly symbolBuilderPivotX=signal(0);
@@ -999,13 +1016,17 @@ export class EditorComponent implements OnDestroy {
     if(this.previewMode())return;
     if(!symbolId&&!customId && (!kind||!this.palette.some(tool=>tool.kind===kind)))return;
     if(symbolId && !findSymbol(symbolId))return;
-    if(customId && !findDynamicSymbol(customId,this.project().customSymbols??[]))return;
+    if(customId && !findDynamicSymbol(customId,this.project().customSymbols??[]) &&
+      !this.vectorCatalog().has(customId))return;
     event.preventDefault();
     const point=this.pointerToCanvas(event);
     if(!point)return;
     if(customId){
-      try{this.placeCustomSymbol(customId,this.round(point.x-45),this.round(point.y-45));}
-      catch(error){this.status.set(String(error));}
+      try{
+        if(this.vectorCatalog().has(customId))this.placeVectorSymbol(customId,
+          this.round(point.x-45),this.round(point.y-45));
+        else this.placeCustomSymbol(customId,this.round(point.x-45),this.round(point.y-45));
+      }catch(error){this.status.set(String(error));}
       return;
     }
     const shape=symbolId?newSymbol(symbolId,this.activePage().shapes.length):
@@ -1021,6 +1042,64 @@ export class EditorComponent implements OnDestroy {
   }
 
   stateOf(shape:Shape):VisualState|undefined{return this.visualStates().get(shape.id);}
+  vectorSymbol(shape:Shape):VectorSymbol|undefined{
+    return shape.kind==='symbol'?this.vectorCatalog().get(shape.symbolId??''):undefined;
+  }
+  vectorAppearance(shape:Shape):RenderVectorSymbol|undefined{
+    return this.vectorFrames().get(shape.id);
+  }
+  openVectorStudio(shape?:Shape):void{
+    if(this.previewMode())return;
+    this.studioSource.set(shape?this.vectorSymbol(shape)??null:null);
+    this.symbolStudioOpen.set(true);
+  }
+  saveVectorToLibrary(raw:VectorSymbol):void{
+    if(this.previewMode())return;
+    try{
+      // Full bounded validation also protects project export/import.
+      const serialized=JSON.stringify(raw);
+      if(serialized.length>131072)throw Error('Symbol exceeds 128 KiB');
+      const def=parseVectorSymbolJson(serialized);
+      if(!vectorSymbolIdAllowed(def.id)||!!findDynamicSymbol(def.id)||
+        !!findSymbol(def.id)||(this.project().customSymbols??[]).some(s=>s.id===def.id))
+        throw Error('Reserved or conflicting Symbol ID');
+      const catalog=this.project().vectorSymbols??[];
+      const existing=catalog.findIndex(s=>s.id===def.id);
+      if(existing<0&&catalog.length>=128)throw Error('Maximum 128 V2 symbols');
+      const next=existing<0?[...catalog,def]:
+        catalog.map(s=>s.id===def.id?def:s);
+      this.record({...this.project(),vectorSymbols:next});
+      this.status.set(def.name+' saved in HMI Library · ready to drag and bind');
+    }catch(error){this.status.set('Symbol save rejected: '+String(error));}
+  }
+  private placeVectorSymbol(id:string,x?:number,y?:number):void{
+    const def=this.vectorCatalog().get(id);
+    if(!def)throw Error('Unknown Vector Symbol');
+    const shape=newVectorInstance(def,this.activePage().shapes.length);
+    const placed={...shape,
+      ...(x===undefined?{}:{x:Math.max(0,Math.min(1200-shape.width,x))}),
+      ...(y===undefined?{}:{y:Math.max(0,Math.min(700-shape.height,y))})};
+    this.record(insertShape(this.project(),placed));
+    this.selectOnly(placed.id);
+  }
+  addVectorSymbol(id:string):void{
+    if(this.previewMode())return;
+    try{this.placeVectorSymbol(id);
+      this.status.set('Vector symbol placed · bind a tag in the Inspector');
+    }catch(error){this.status.set(String(error));}
+  }
+  startVectorDrag(event:DragEvent,id:string):void{
+    if(this.previewMode()||!this.vectorCatalog().has(id))return;
+    event.dataTransfer?.setData('application/x-web-hmi-custom-symbol',id);
+    if(event.dataTransfer)event.dataTransfer.effectAllowed='copy';
+  }
+  editVectorSymbol(shape:Shape):void{
+    if(this.vectorSymbol(shape))this.openVectorStudio(shape);
+  }
+  exportVectorSymbol(shape:Shape):void{
+    const def=this.vectorSymbol(shape);
+    if(def)this.downloadJson(def,def.id+'.symbol.json');
+  }
   dynamicSymbol(shape:Shape):DynamicSymbol|undefined{
     return shape.kind==='symbol'?
       this.dynamicCatalog().get(shape.symbolId??''):undefined;
@@ -1073,8 +1152,16 @@ export class EditorComponent implements OnDestroy {
     if(!file)return;
     try{
       if(file.size>128_000)throw Error('Maximum symbol file size is 128 KB');
-      const def=parseDynamicSymbol(JSON.parse(await file.text()));
-      if(!!findDynamicSymbol(def.id)||!!findSymbol(def.id))throw Error('Reserved symbol ID');
+      const parsed=JSON.parse(await file.text()) as unknown;
+      if(parsed&&typeof parsed==='object'&&
+        (parsed as {format?:unknown}).format==='web-hmi-vector-symbol'){
+        const def=parseVectorSymbolJson(JSON.stringify(parsed));
+        this.saveVectorToLibrary(def);
+        return;
+      }
+      const def=parseDynamicSymbol(parsed);
+      if(!!findDynamicSymbol(def.id)||!!findSymbol(def.id)||
+        this.vectorCatalog().has(def.id))throw Error('Reserved symbol ID');
       const custom=this.project().customSymbols??[];
       if(custom.some(x=>x.id===def.id))throw Error('Symbol already exists: '+def.id);
       if(custom.length>=128)throw Error('Maximum 128 custom symbols');
@@ -1109,6 +1196,7 @@ export class EditorComponent implements OnDestroy {
         this.symbolBuilderOpenAngle());
       const custom=this.project().customSymbols??[];
       if(custom.length>=128)throw Error('Maximum 128 custom symbols');
+      if(this.vectorCatalog().has(def.id))throw Error('Duplicate custom symbol ID');
       this.record({...this.project(),customSymbols:[...custom,def]});
       this.symbolBuilderOpen.set(false);
       this.status.set('Reusable '+name+' saved · available in My Symbols');
