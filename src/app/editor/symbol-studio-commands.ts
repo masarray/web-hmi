@@ -4,6 +4,7 @@
  * to Undo exactly once; pointermove must never persist/serialize full projects.
  */
 import {groupVectorNodes,ungroupVectorNode,duplicateVectorSubtree} from './symbol-studio-grouping.ts';
+import {setPort,deletePort,renamePort} from './symbol-studio-anchors.ts';
 import {parseVectorSymbol,indexVectorNodes,
   type VectorSymbol,type VectorNode,type NodeOverride} from './symbol-studio-model.ts';
 
@@ -12,6 +13,9 @@ export type OverrideField=
   'transform.x'|'transform.y'|'transform.rotation'|'transform.scaleX'|
   'transform.scaleY'|'transform.pivot';
 export type SymbolEdit=
+  |{readonly type:'set-port';readonly id:string;readonly point:readonly [number,number]}
+  |{readonly type:'delete-port';readonly id:string}
+  |{readonly type:'rename-port';readonly id:string;readonly nextId:string}
   |{readonly type:'group';readonly nodeIds:readonly string[];
     readonly groupId:string;readonly name?:string}
   |{readonly type:'ungroup';readonly groupId:string}
@@ -79,7 +83,13 @@ function removeField(value:NodeOverride,field:OverrideField):NodeOverride{
 export function applySymbolEdit(doc:VectorSymbol,edit:SymbolEdit):VectorSymbol{
   const nodes=indexVectorNodes(doc);
   let next:VectorSymbol;
-  if(edit.type==='group'){
+  if(edit.type==='set-port'){
+    next=setPort(doc,edit.id,edit.point);
+  }else if(edit.type==='delete-port'){
+    next=deletePort(doc,edit.id);
+  }else if(edit.type==='rename-port'){
+    next=renamePort(doc,edit.id,edit.nextId);
+  }else if(edit.type==='group'){
     next=groupVectorNodes(doc,edit.nodeIds,edit.groupId,edit.name);
   }else if(edit.type==='ungroup'){
     next=ungroupVectorNode(doc,edit.groupId);

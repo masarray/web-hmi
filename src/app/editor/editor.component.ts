@@ -1045,6 +1045,10 @@ export class EditorComponent implements OnDestroy {
   vectorSymbol(shape:Shape):VectorSymbol|undefined{
     return shape.kind==='symbol'?this.vectorCatalog().get(shape.symbolId??''):undefined;
   }
+  vectorPortList(def:VectorSymbol):{id:string;point:readonly [number,number]}[]{
+    // ViewBox-local, state-independent electrical terminals.
+    return Object.entries(def.ports).map(([id,point])=>({id,point}));
+  }
   vectorAppearance(shape:Shape):RenderVectorSymbol|undefined{
     return this.vectorFrames().get(shape.id);
   }

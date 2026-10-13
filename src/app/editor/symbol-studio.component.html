@@ -24,6 +24,8 @@
         <button type="button" [class.active]="activeTool()==='line'" (click)="setTool('line')" aria-label="Line Tool" title="Draw a line">╱ <span>Line</span></button>
         <button type="button" [class.active]="activeTool()==='rect'" (click)="setTool('rect')" aria-label="Rectangle Tool" title="Draw a rectangle">□ <span>Rect</span></button>
         <button type="button" [class.active]="activeTool()==='ellipse'" (click)="setTool('ellipse')" aria-label="Ellipse Tool" title="Draw an ellipse">◯ <span>Ellipse</span></button>
+        <button type="button" [class.active]="activeTool()==='port'" (click)="setTool('port')" aria-label="Connection Port Tool" title="Click to add terminals; drag ports to adjust positions">⊕ <span>Ports</span></button>
+        <button type="button" [class.active]="activeTool()==='pivot'" (click)="setTool('pivot')" aria-label="Pivot Tool" title="Set individual element rotation anchor">⌖ <span>Pivot</span></button>
       </div>
       <div class="section-caption separate">OBJECT LAYERS <span>{{model().nodes.length}} root</span></div>
       <div class="group-toolbar" aria-label="Group editing tools">
@@ -50,6 +52,7 @@
         <p>Drag on the artboard to draw. Select a line to edit both endpoints.</p>
         <p>Shift+click to select multiple layers · Ctrl+G to group, Ctrl+Shift+G to ungroup.</p>
         <p>Double-click a group to enter · Esc goes back · right-click for object actions.</p>
+        <p>Ports: click to create, drag to move. Pivot: select a graphic then drag the diamond to its hinge.</p>
       </div>
     </aside>
     <main class="studio-center">
@@ -63,7 +66,7 @@
         <span class="stretch"></span>
         <label class="inline-toggle"><input type="checkbox" aria-label="Snap to grid"
           [checked]="snapEnabled()" (change)="snapEnabled.set($any($event.target).checked)"> Snap 5</label>
-        <span class="studio-mode">{{activeTool()==='select'?'Select & transform':'Draw '+activeTool()}}</span>
+        <span class="studio-mode">{{activeTool()==='port'?'Place electrical ports':activeTool()==='pivot'?'Set rotation pivot':activeTool()==='select'?'Select & transform':'Draw '+activeTool()}}</span>
       </div>
       <div class="studio-stage">
         <svg #artboard class="studio-svg" [attr.viewBox]="'0 0 '+model().viewBox[0]+' '+model().viewBox[1]"
@@ -127,6 +130,30 @@
               }
             }
           }
+          @if(activeTool()==='port'){
+            @for(port of ports();track port.id){
+              <g [attr.data-port-id]="port.id" class="studio-port"
+                (pointerdown)="beginPortDrag($event,port.id)">
+                <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
+                  r="4" fill="#204457" stroke="#f3cc7b" stroke-width="1.5"/>
+                <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
+                  r="1.5" fill="#f3cc7b"/>
+                <text [attr.x]="port.point[0]+6" [attr.y]="port.point[1]-5"
+                  fill="#f9da9c" font-size="6" pointer-events="none">{{port.id}}</text>
+                <title>{{port.id}} connection terminal · drag to move</title>
+              </g>
+            }
+          }
+          @if(activeTool()==='pivot' && selectedPivot();as pivot){
+            <g class="studio-pivot" data-testid="pivot-handle"
+              (pointerdown)="beginPivotDrag($event)">
+              <path [attr.d]="'M '+pivot[0]+' '+(pivot[1]-6)+' L '+(pivot[0]+6)+' '+pivot[1]+
+                ' L '+pivot[0]+' '+(pivot[1]+6)+' L '+(pivot[0]-6)+' '+pivot[1]+' Z'"
+                stroke="#1a2934" stroke-width="1.2" fill="#ffc878"/>
+              <circle [attr.cx]="pivot[0]" [attr.cy]="pivot[1]" r="1.5" fill="#493315"/>
+              <title>Rotation pivot · drag to move the hinge</title>
+            </g>
+          }
           @for(handle of selectedHandles();track handle.name){
             @if(activeState()==='BASE'||handle.name==='rotate'){
               <circle class="studio-handle" [class.rotate-handle]="handle.name==='rotate'"
@@ -160,6 +187,23 @@
           </button>
         }
       </div>
+      <div class="section-caption separate">CONNECTION PORTS <span>{{ports().length}}/24</span></div>
+      <div class="studio-port-list">
+        @for(port of ports();track port.id){
+          <div class="studio-port-row">
+            <input [attr.aria-label]="'Rename port '+port.id"
+              [value]="port.id" maxlength="64" (change)="renamePortFromInput(port.id,$event)">
+            <input type="number" [attr.aria-label]="'Port '+port.id+' X'"
+              [value]="port.point[0]" step="1" (change)="setPortCoordinate(port.id,0,$event)">
+            <input type="number" [attr.aria-label]="'Port '+port.id+' Y'"
+              [value]="port.point[1]" step="1" (change)="setPortCoordinate(port.id,1,$event)">
+            <button type="button" [attr.aria-label]="'Delete port '+port.id"
+              title="Remove terminal" (click)="deletePortById(port.id)">×</button>
+          </div>
+        } @empty {
+          <p class="studio-port-empty">Choose Ports tool, then click the artboard to add fixed wire terminals.</p>
+        }
+      </div>
       <div class="section-caption separate">OBJECT PROPERTIES</div>
       @if(selected();as node){
         <div class="studio-properties">
@@ -183,6 +227,24 @@
               <input type="number" min="0" max="1" step=".1" aria-label="Studio opacity"
                 [value]="appearance()?.style?.opacity" (change)="propertyNumber('opacity',$event)">
             </label>
+          }
+          @if(activeState()==='BASE'){
+            <div class="pivot-editor">
+              <span>Rotation pivot · local coordinates</span>
+              <div class="pivot-coords">
+                <label>X
+                  <input type="number" aria-label="Pivot X" [value]="node.transform.pivot[0]"
+                    (change)="setPivotCoordinate(0,$event)">
+                </label>
+                <label>Y
+                  <input type="number" aria-label="Pivot Y" [value]="node.transform.pivot[1]"
+                    (change)="setPivotCoordinate(1,$event)">
+                </label>
+              </div>
+              <button type="button" (click)="setTool('pivot')" aria-label="Edit Pivot on Canvas">
+                ⌖ Adjust pivot on canvas
+              </button>
+            </div>
           }
           <label>Rotation (degrees)
             <input type="number" min="-3600" max="3600" step="15"
