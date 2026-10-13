@@ -247,8 +247,12 @@ export class SymbolStudioComponent {
   beginNode(event:PointerEvent,id:string):void{
     if(event.button!==0||this.activeTool()!=='select')return;
     const p=this.point(event);if(!p)return;
-    this.selectedId.set(id);this.context.set(null);
-    this.beginGesture(event,{id,pointerId:event.pointerId,start:p,
+    this.choose(id,event);
+    if(event.shiftKey||event.ctrlKey||event.metaKey){
+      event.preventDefault();event.stopPropagation();return;
+    }
+    const target=this.selectedId()!;
+    this.beginGesture(event,{id:target,pointerId:event.pointerId,start:p,
       source:this.model(),handle:'move'});
   }
   beginHandle(event:PointerEvent,handle:Handle):void{
@@ -271,7 +275,9 @@ export class SymbolStudioComponent {
     if(event.button!==0)return;
     const p=this.point(event);if(!p)return;
     this.context.set(null);
-    if(this.activeTool()==='select'){this.selectedId.set(null);return;}
+    if(this.activeTool()==='select'){
+      this.selectedId.set(null);this.selectedIds.set([]);return;
+    }
     this.drawing={pointerId:event.pointerId,start:p,current:p};
     this.drawingPreview.set({start:p,end:p});
     this.capture(event);
@@ -349,6 +355,11 @@ export class SymbolStudioComponent {
   private createFromGesture(a:Vector2,b:Vector2):void{
     if(this.activeTool()==='select')return;
     const name=this.activeTool(),id=randomId(name);
+    const focus=this.isolatedGroup();
+    if(focus){
+      a=worldToNode(this.model(),focus,a);
+      b=worldToNode(this.model(),focus,b);
+    }
     const common={id,name:name[0]!.toUpperCase()+name.slice(1),
       visible:true,transform:TRANSFORM,style:STYLE};
     const left=Math.min(a[0],b[0]),top=Math.min(a[1],b[1]);
@@ -361,8 +372,8 @@ export class SymbolStudioComponent {
     else node={...common,kind:'ellipse',
       cx:left+w/2,cy:top+h/2,rx:w/2,ry:h/2,
       style:{...STYLE,fill:'#204353'}};
-    this.execute({type:'insert',node});
-    this.selectedId.set(id);this.activeTool.set('select');this.activeState.set('BASE');
+    this.execute({type:'insert',node,...(focus?{parentId:focus}:{})});
+    this.selectedId.set(id);this.selectedIds.set([id]);this.activeTool.set('select');this.activeState.set('BASE');
     this.status.set('Created '+name+' · select handles to edit');
   }
   changeName(event:Event):void{
@@ -419,7 +430,9 @@ export class SymbolStudioComponent {
   deleteSelected():void{
     const id=this.selectedId();if(!id||this.gesture)return;
     this.execute({type:'remove',nodeId:id});
-    if(!indexVectorNodes(this.model()).has(id))this.selectedId.set(null);
+    if(!indexVectorNodes(this.model()).has(id)){
+      this.selectedId.set(null);this.selectedIds.set([]);
+    }
   }
   newSymbol():void{
     const base=starter();
@@ -430,7 +443,8 @@ export class SymbolStudioComponent {
       name:'Untitled Symbol',nodes:[blankLine],
       states:base.states.map(state=>({...state,overrides:{}}))});
     this.history=new SymbolEditHistory(def);this.model.set(def);
-    this.selectedId.set('starter-line');this.activeState.set('BASE');
+    this.selectedId.set('starter-line');this.selectedIds.set(['starter-line']);
+    this.isolatedGroup.set(null);this.activeState.set('BASE');
     this.canUndo.set(false);this.canRedo.set(false);this.dirty.set(true);
     this.status.set('New symbol · edit elements and states, then Save');
   }
@@ -464,7 +478,8 @@ export class SymbolStudioComponent {
       const doc=parseVectorSymbolJson(await file.text());
       this.history=new SymbolEditHistory(doc);this.model.set(doc);
       this.canUndo.set(false);this.canRedo.set(false);
-      this.selectedId.set(null);this.activeState.set('BASE');this.dirty.set(true);
+      this.selectedId.set(null);this.selectedIds.set([]);
+      this.isolatedGroup.set(null);this.activeState.set('BASE');this.dirty.set(true);
       this.status.set('Imported '+doc.name+' · Save to retain in browser');
     }catch(err){this.status.set('Import rejected: '+String(err));}
   }
