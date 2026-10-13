@@ -461,6 +461,13 @@ export class SymbolStudioComponent {
   private createFromGesture(a:Vector2,b:Vector2):void{
     if(this.activeTool()==='select')return;
     const name=this.activeTool(),id=randomId(name);
+    // Drawing near a fixed electrical port lands exactly on its center.
+    // The artwork does not become implicitly coupled to the port; no hidden
+    // dependencies are created between line endpoints and terminals.
+    if(name==='line'&&this.snapEnabled()){
+      a=nearestPort(this.model(),a,7)?.point??a;
+      b=nearestPort(this.model(),b,7)?.point??b;
+    }
     const focus=this.isolatedGroup();
     if(focus){
       a=worldToNode(this.model(),focus,a);
