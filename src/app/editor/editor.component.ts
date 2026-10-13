@@ -23,7 +23,7 @@ import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align
 import {SymbolStudioComponent} from './symbol-studio.component';
 import {parseVectorSymbolJson,type VectorSymbol} from './symbol-studio-model';
 import {projectVectorFrame,vectorSymbolIdAllowed,type RenderVectorSymbol} from './vector-runtime';
-import {connectPorts,disconnectWire,routedPageWires,type PortRef} from './port-wires';
+import {connectPorts,disconnectWire,routedPageWires,wirePortWorld,type PortRef} from './port-wires';
 
 const STORAGE_KEY='web-hmi.project.v1';
 const MODBUS_KEY='web-hmi.modbus-map.v1';
@@ -78,7 +78,65 @@ export class EditorComponent implements OnDestroy {
   readonly selectedId=computed(()=>this.selectedIds().length===1?this.selectedIds()[0]??null:null);
   readonly selectionCount=computed(()=>this.selectedIds().length);
   readonly selectionLookup=computed(()=>new Set(this.selectedIds()));
+  /** Staged only in the editor UI; never persisted as a dangling wire. */
+  readonly wiringMode=signal(false);
+  readonly pendingWire=signal<PortRef|null>(null);
   readonly wireFromPort=signal('');
+  readonly interactivePorts=computed(()=>{
+    const positions=this.dragOffsets(),resizing=this.preview(),catalog=this.vectorCatalog();
+    return this.activePage().shapes.flatMap(shape=>{
+      const def=catalog.get(shape.symbolId??'');
+      if(shape.kind!=='symbol'||!def)return [];
+      const moved=positions[shape.id];
+      const resized=resizing?.id===shape.id?resizing:null;
+      const placement={
+        x:moved?.x??shape.x,y:moved?.y??shape.y,
+        width:resized?.width??shape.width,height:resized?.height??shape.height
+      };
+      return Object.keys(def.ports).map(portId=>({
+        shapeId:shape.id,portId,
+        point:wirePortWorld(shape,def,portId,placement),
+        name:shape.name
+      }));
+    });
+  });
+  toggleWiringMode():void{
+    if(this.previewMode())return;
+    this.wiringMode.update(on=>!on);
+    this.pendingWire.set(null);
+    this.status.set(this.wiringMode()?'Choose a source terminal, then a destination terminal':
+      'Port connection mode exited');
+  }
+  clickElectricalPort(event:PointerEvent,shapeId:string,portId:string):void{
+    event.preventDefault();event.stopPropagation();
+    if(this.previewMode()||!this.wiringMode())return;
+    const exists=this.interactivePorts().some(p=>p.shapeId===shapeId&&p.portId===portId);
+    if(!exists)return;
+    const target:PortRef={shapeId,portId};
+    const source=this.pendingWire();
+    if(!source){
+      this.pendingWire.set(target);
+      this.status.set('Source '+shapeId+' / '+portId+' · click another symbol terminal');
+      return;
+    }
+    if(source.shapeId===shapeId){
+      this.pendingWire.set(target);
+      this.status.set('Choose a terminal on another symbol');
+      return;
+    }
+    try{
+      this.record(connectPorts(this.project(),source,target,
+        'wire-'+crypto.randomUUID().replaceAll('-','').slice(0,16)));
+      this.pendingWire.set(null);
+      this.status.set('Attached electrical wire '+source.portId+' → '+portId+
+        ' · follows both symbols');
+    }catch(error){
+      this.status.set('Wire rejected: '+String(error));
+    }
+  }
+  cancelWiring():void{
+    this.pendingWire.set(null);this.wiringMode.set(false);
+  }
   readonly wireToPort=signal('');
   readonly wirePair=computed(()=>{
     const ids=this.selectedIds();
