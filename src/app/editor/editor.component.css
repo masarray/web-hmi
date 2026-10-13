@@ -380,3 +380,11 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 .wire-connection-bar .wire-chip{padding:5px 8px;background:#264251;
  color:#d4e7ed;border:1px solid #476270}
 .attached-wire{pointer-events:none}
+
+/* Direct connection authoring reuses existing routed wire geometry. */
+.wire-direct-control{display:flex;align-items:center;gap:10px;padding:6px 12px;background:#1a303e;border-bottom:1px solid #304b5c;color:#b6d3e1;font-size:11px}
+.wire-direct-control button{border:1px solid #547687;background:#25485c;color:#d8edf5;padding:6px 10px;border-radius:5px}
+.wire-direct-control button.on{background:#486637;border-color:#88c597;color:#f1fff1}
+.wire-direct-control span{flex:1;color:#eacb91}
+.direct-port{cursor:crosshair;touch-action:none}
+.direct-port.chosen circle:last-of-type{stroke:#185c47;stroke-width:2.6}
