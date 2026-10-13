@@ -5,6 +5,7 @@ import {findProcessGraphic} from './process-graphics.ts';
 import {parseDynamicSymbol,findDynamicSymbol,type DynamicSymbol,type PointMode} from './dynamic-symbol.ts';
 import {parseVectorSymbolJson,type VectorSymbol} from './symbol-studio-model.ts';
 import {vectorSymbolIdAllowed,symbolDimensions} from './vector-runtime.ts';
+import {validatePageWires,pruneDeletedShapeWires,type PortWire} from './port-wires.ts';
 export type AnimationMode='none'|'spin'|'pulse';
 export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'text' | 'breaker' | 'symbol';
 export interface Shape {
@@ -20,7 +21,11 @@ export interface Shape {
   partRules?:PartRule[];
   pointMode?:PointMode;
 }
-export interface Page { id:string; name:string; shapes:Shape[] }
+export interface Page {
+  id:string; name:string; shapes:Shape[];
+  /** Optional referential electrical wiring, backward compatible with v1. */
+  wires?:PortWire[];
+}
 export interface Project {
   schemaVersion:1; id:string; name:string; activePageId:string; pages:Page[];
   /** Optional for v1 compatibility; imported symbol geometry travels with project. */
@@ -139,7 +144,11 @@ export function parseProject(v:unknown):Project {
           partRules:s.partRules.map(rule=>({partIndex:rule.partIndex,effect:rule.effect}))
         }:{})};
     });
-    return {id:raw.id,name:raw.name,shapes};
+    const page:Page={id:raw.id,name:raw.name,shapes};
+    if(raw.wires!==undefined){
+      page.wires=validatePageWires({vectorSymbols},page,raw.wires);
+    }
+    return page;
   });
   if (!pageIds.has(v.activePageId)) throw new Error('Active page not found');
   return {schemaVersion:1,id:v.id,name:v.name,activePageId:v.activePageId,pages,
@@ -205,7 +214,7 @@ export function editShape(p:Project,id:string,edit:ShapeEdit):Project {
 }
 export function deleteShape(p:Project,id:string):Project {
   return {...p,pages:p.pages.map(page=>page.id===p.activePageId?
-    {...page,shapes:page.shapes.filter(s=>s.id!==id)}:page)};
+    pruneDeletedShapeWires(page,page.shapes.filter(s=>s.id!==id)):page)};
 }
 export function createPage(p:Project):Project {
   if (p.pages.length>=64) throw new Error('Maximum 64 pages');
