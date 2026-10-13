@@ -100,3 +100,14 @@ button:disabled{opacity:.35;cursor:default}
  .studio-top{gap:3px;padding:8px}
 }
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important}}
+
+/* Native-feeling grouping controls remain contextual and quiet. */
+.group-toolbar{display:flex;gap:5px;align-items:center;padding:1px 9px 9px;
+ border-bottom:1px solid #2d4859}
+.group-toolbar>span{flex:1;color:#88aabb;font-size:10px}
+.group-toolbar button{font-size:10px;padding:6px 7px;background:#1b3544;border:1px solid #355567}
+.group-toolbar button:disabled{opacity:.3;background:transparent}
+.isolation-mode{color:#f0cd84!important;border-left:2px solid #d2a85b;
+ padding-left:8px;font-size:10px!important}
+.studio-context button:focus-visible,.layer:focus-visible,.group-toolbar button:focus-visible{
+ outline:2px solid #9bdcf1;outline-offset:1px}
