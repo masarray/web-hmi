@@ -110,12 +110,12 @@
                 [attr.x2]="drag.end[0]" [attr.y2]="drag.end[1]"
                 stroke="#f0c97c" stroke-width="2" stroke-dasharray="3 2" pointer-events="none"/>
             } @else {
-              <rect [attr.x]="Math.min(drag.start[0],drag.end[0])"
-                [attr.y]="Math.min(drag.start[1],drag.end[1])"
-                [attr.width]="Math.abs(drag.end[0]-drag.start[0])"
-                [attr.height]="Math.abs(drag.end[1]-drag.start[1])"
-                fill="#f0c97c22" stroke="#f0c97c" stroke-width="1" stroke-dasharray="3 2"
-                pointer-events="none"/>
+              @if(drawingBox();as box){
+                <rect [attr.x]="box.x" [attr.y]="box.y"
+                  [attr.width]="box.width" [attr.height]="box.height"
+                  fill="#f0c97c22" stroke="#f0c97c" stroke-width="1" stroke-dasharray="3 2"
+                  pointer-events="none"/>
+              }
             }
           }
           @for(handle of selectedHandles();track handle.name){
