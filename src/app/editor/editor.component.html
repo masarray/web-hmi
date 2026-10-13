@@ -580,9 +580,9 @@
       </div>
       @if(!previewMode()){
         <div class="wire-direct-control">
-          <button type="button" aria-label="Connect by clicking electrical ports"
+          <button type="button" aria-label="Wire terminals on canvas"
             [class.on]="wiringMode()" [attr.aria-pressed]="wiringMode()"
-            (click)="toggleWiringMode()">⊙ {{wiringMode()?'Exit Port Connect':'Connect Ports on Canvas'}}</button>
+            (click)="toggleWiringMode()">⊙ {{wiringMode()?'Exit Wiring':'Wire Terminals'}}</button>
           @if(wiringMode()){
             <span role="status">{{pendingWire()?
               'Source selected: '+pendingWire()!.portId+' · click destination port':
