@@ -86,3 +86,35 @@ test('shape creation, context menu and edit canvas preserve HMI Editor',async({p
   await page.getByRole('button',{name:'Back to HMI Editor'}).click();
   await expect(page.getByText('INDUSTRIAL SVG LIBRARY')).toBeVisible();
 });
+
+test('New Symbol is neutral and closed-state dragging preserves its rotation override',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Open Symbol Studio'}).click();
+  await page.getByRole('button',{name:'New Symbol'}).click();
+  await expect(page.getByRole('textbox',{name:'Symbol name'})).toHaveValue('Untitled Symbol');
+  await expect(page.locator('.studio-object')).toHaveCount(1);
+  await expect(page.locator('[data-node-id=starter-line] line').first()).toBeVisible();
+  await page.getByRole('button',{name:'Edit state Closed'}).click();
+  const rotation=page.getByRole('spinbutton',{name:'Studio rotation'});
+  await rotation.fill('45');
+  await rotation.press('Tab');
+  const svgLine=page.locator('[data-node-id=starter-line] line').first();
+  const box=await svgLine.boundingBox();expect(box).not.toBeNull();
+  await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x+box!.width/2+30,box!.y+box!.height/2+30,{steps:8});
+  await page.mouse.up();
+  const download=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Export Symbol Studio JSON'}).click();
+  const result=await download;
+  const stream=await result.createReadStream();let text='';
+  for await(const chunk of stream)text+=chunk.toString();
+  const def=JSON.parse(text);
+  const changed=def.states.find((state:{id:string})=>state.id==='CLOSED')
+    .overrides['starter-line'].transform;
+  expect(changed.rotation).toBe(45);
+  expect(changed.x).not.toBe(0);
+  expect(changed.y).not.toBe(0);
+  await page.getByRole('button',{name:'Edit state Open'}).click();
+  await expect(page.getByRole('spinbutton',{name:'Studio rotation'})).toHaveValue('0');
+});
