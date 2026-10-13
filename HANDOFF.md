@@ -1,7 +1,7 @@
 # Web HMI Studio — authoritative thread handoff
 
 > **Read this file first when continuing this project in a new ChatGPT / coding thread.**
-> Snapshot: **2026-10-13**, confirmed `main` commit **`fc2ee72bf52d8f69b8a7865a2abfdb5fc72f7611`**.
+> Snapshot: **2026-10-14**, confirmed `main` commit **`8301fe6f599d7e2e91f2e10dbd1ff7e69bb116c6`** (documentation PR #31).
 > This SHA is evidence of the snapshot, **not an instruction to reset or branch from an old SHA**.
 > Before changing code, fetch the **current** GitHub `main`, current PRs/issues, and latest CI/Pages runs.
 > Repo: https://github.com/masarray/web-hmi · Public UI: https://masarray.github.io/web-hmi/
@@ -14,13 +14,13 @@ Then: **Save → named project library → portable symbol JSON → import/reuse
 
 Do **not** regress existing devices/tags, multi-PLC, Alarms, Trends/Historian, FUXA SVG library, or Pages publication. Do not replace the application with a separate web demo. Prefer engineered reusable models and one interaction engine over duplicated state or ad-hoc DOM mutations. Never claim professional editor parity until demonstrated with actual UI tests and user review.
 
-## 2. Exact current release and CI (verified 2026-10-13)
+## 2. Exact current release and CI (verified 2026-10-14)
 
 | Resource | Current evidence |
 | --- | --- |
-| Verified `main` | `fc2ee72bf52d8f69b8a7865a2abfdb5fc72f7611` (PR #30) |
-| Post-merge Editor CI | [run 38395415393](https://github.com/masarray/web-hmi/actions/runs/38395415393), **success, 56/56 Chromium tests** |
-| Public GitHub Pages | [run 38395690440](https://github.com/masarray/web-hmi/actions/runs/38395690440), **success** for above `main` |
+| Verified `main` | `8301fe6f599d7e2e91f2e10dbd1ff7e69bb116c6` (PR #31, docs-only; V2 wire code preserved) |
+| Post-merge Editor CI | [run 38400681334](https://github.com/masarray/web-hmi/actions/runs/38400681334): overall **success**, **124/124 Node**, but Chromium was **54 first-pass + 2 flaky passed after retry**. Not a zero-flake green run; see #27. |
+| Public GitHub Pages | [run 38401031912](https://github.com/masarray/web-hmi/actions/runs/38401031912), **success for exact `8301fe6f` main SHA** |
 | Public URL | https://masarray.github.io/web-hmi/ |
 | Product roadmap / acceptance | [Issue #19](https://github.com/masarray/web-hmi/issues/19) |
 | Unresolved CI flake | [Issue #27](https://github.com/masarray/web-hmi/issues/27) |
@@ -40,6 +40,22 @@ Do **not** regress existing devices/tags, multi-PLC, Alarms, Trends/Historian, F
 | [#26](https://github.com/masarray/web-hmi/pull/26) | `9558fbdf` | Visual stationary ports and per-node moving pivot, snap line endpoints, HMI port edit-mode overlay |
 | [#29](https://github.com/masarray/web-hmi/pull/29) | `75e35c09` | Page-scoped attached wires between V2 instance ports; moves/resizes follow endpoints; Undo, JSON export/import, Preview |
 | [#30](https://github.com/masarray/web-hmi/pull/30) | `fc2ee72b` | **Direct click-to-connect terminals on HMI canvas**, with source feedback and Cancel; previous dropdown workflow also works |
+| [#31](https://github.com/masarray/web-hmi/pull/31) | `8301fe6f` | Authoritative root handoff and `AGENTS.md`, **docs-only** (no new editor functionality) |
+
+### Already merged industrial backend: CP-09 through CP-15
+
+**Preserve these working milestones when editing Symbol Studio V2.** The Node backend is separate from the public static GitHub Pages; a real PLC gateway/service must be configured for live values.
+
+| Milestone | Delivered and merged | Authority |
+| --- | --- | --- |
+| CP-09/10 | Read-only Modbus TCP FC01–FC04, validated mappings, Devices & Tags and HMI tag bindings | `server/adapters/modbus-tcp.ts`, `src/shared/modbus-mapping.ts`, [CP09](docs/architecture/CP09.md), [CP10](docs/architecture/CP10.md) |
+| CP-11/12 | Authenticated config hot-apply, **Test PLC**, health stats and failure-preserving source switch | `server/device-runtime.ts`, `server/device-config-api.ts`, [CP11](docs/architecture/CP11.md), [CP12](docs/architecture/CP12.md) |
+| CP-13 | Isolated Modbus poller per PLC, one shared browser WebSocket, qualified per-device tags and configuration continuity | `server/device-fleet-runtime.ts`, `src/shared/device-fleet.ts`, [CP13](docs/architecture/CP13.md) |
+| CP-14 | Central alarm lifecycle/quality/ACK, hysteresis and durable history; ACK never writes to PLC | `server/alarm-engine.ts`, [CP14](docs/architecture/CP14.md) |
+| **CP-15 (#17)** | Selected-tag SVG **Trends** and server-owned historian, UTC-day JSONL, retention, bounded streaming query preserving spikes/quality gaps. **Merged `8b57fa83`**; post-merge [CI 38188516445](https://github.com/masarray/web-hmi/actions/runs/38188516445) **88 Node + 41 Chromium first-pass** | `server/trend-historian.ts`, `server/trend-storage.ts`, `src/shared/trend-contract.ts`, [CP15](docs/architecture/CP15.md) |
+| **CP-15 quality fix (#20)** | Server-generated expired-sample **STALE** quality to alarm/historian without browser presence; same-millisecond GOOD→STALE→GOOD retained. **Merged `9838312e`**; [CI 38190585292](https://github.com/masarray/web-hmi/actions/runs/38190585292) **90 Node + 41 Chromium** | `server/tag-hub.ts`, [CP15 integrity addendum](docs/architecture/CP15.md) |
+
+Do **not** revive `feat/cp15-trends-historian` or merge PR #17/#20 again: both have already landed, and the current `main` includes major subsequent Symbol Studio V2 advances. Backend CI is software evidence, not PLC plant-site acceptance.
 
 **Important branch trap:** [PR #28](https://github.com/masarray/web-hmi/pull/28) remains **OPEN DRAFT** based on old `9558fbdf` (as of snapshot). It implements an overlapping wire milestone that was already delivered via **#29 and #30**. **Do not merge #28, rebase it onto main, or copy it verbatim without an explicit diff and regression audit.** It is a historical parallel implementation, **not** the latest accepted base.
 
@@ -100,6 +116,15 @@ Advance only with actual code + tests + green CI + deployed `main`. Prefer compl
 
 ## 7. Copyable kickoff for the next ChatGPT thread
 
-> Continue development of `masarray/web-hmi` using the connected GitHub plugin. **Read root `AGENTS.md` and `HANDOFF.md` first**, then the latest `main`, Issues #19 and #27, PRs #29/#30 and any OPEN PRs. Treat `fc2ee72b` as a **2026-10-13 verified snapshot**, **not** necessarily the newest code. Preserve the real CI-green GitHub Pages Angular app, existing Symbol Studio project library, nested state engine, fixed ports and existing attached wire/direct-click implementation. **Never merge historical draft PR #28 without an overlap audit**. Deliver the next meaningful native-quality HMI-editor improvement with typed schema, focused tests and Chromium E2E; merge only green CI and verify Pages source commit. Clearly distinguish what is implemented vs not implemented; do not start from scratch or reimplement features already merged.
+> Continue development of `masarray/web-hmi` using the connected GitHub plugin. **Read root `AGENTS.md` and `HANDOFF.md` first**, then the latest `main`, Issues #19 and #27, merged PRs #17/#20/#29/#30/#31 and any OPEN PRs. Treat `8301fe6f` as a **2026-10-14 verified snapshot**, **not** necessarily the newest code. Preserve the real CI-green GitHub Pages Angular app, existing Symbol Studio project library, nested state engine, fixed ports and existing attached wire/direct-click implementation. **Never merge historical draft PR #28 without an overlap audit**. Deliver the next meaningful native-quality HMI-editor improvement with typed schema, focused tests and Chromium E2E; merge only green CI and verify Pages source commit. Clearly distinguish what is implemented vs not implemented; do not start from scratch or reimplement features already merged.
 
-Last review updated: **2026-10-13**. This document is a snapshot; GitHub state wins when newer.
+Last review updated: **2026-10-14**. The current first-pass flake is evidenced by Issue #27 and run 38400681334; do not call it fixed. This document is a snapshot; GitHub state wins when newer.
+
+## 8. User workflow and closing-thread sync (2026-10-14)
+
+- **Build an industrial-production-oriented Web HMI**, not a separate lab-only app. Real plant trials are the user's own acceptance process; do not artificially restrict design to simulation, but never claim untested PLC commissioning.
+- **Study FUXA code/workflows; reproduce or improve the useful behaviors with efficient, typed native Angular/Node design**, not a second editor or a naive copy/paste of legacy FUXA runtime. Preserve provenance/licensing for borrowed assets.
+- Operator UX should be **novice-friendly**, uncluttered, minimal text/noise, fast interactions and visible behavior, with advanced engineering controls progressive-disclosed.
+- **No artifact download is wanted at this stage.** Use GitHub CI (Node, TS, build, Chromium), exact-SHA Pages deployments, focused regressions, and link the verified runs; do not spend cycles packaging installer/zip.
+- During this thread CP-15 was implemented in PR #17 and later quality-finalized in #20. **Both are merged; neither requires repeat implementation or cherry-picking.** Subsequent parallel Symbol Studio V2 work through #31 is also merged. **Start from the latest live main**, never from an earlier conversation snapshot, and protect progress by issue/PR source-of-truth plus checkpoint only after verified CI.
+- **Outstanding top correctness blocker:** Issue #27 Save→Library intermittent missing catalog buttons. Current main run 38400681334 is overall green but has 2 Chromium retries; prioritize root-cause fix rather than weakening tests. Overlapping draft PR #28 is not a shortcut.
