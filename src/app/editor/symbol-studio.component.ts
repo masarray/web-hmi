@@ -69,6 +69,8 @@ export class SymbolStudioComponent {
         const first=[...indexVectorNodes(this.history.document).values()]
           .find(node=>node.kind!=='group');
         this.selectedId.set(first?.id??null);
+        this.selectedIds.set(first?[first.id]:[]);
+        this.isolatedGroup.set(null);
         this.activeState.set('BASE');
         this.canUndo.set(false);this.canRedo.set(false);this.dirty.set(false);
       }
@@ -77,8 +79,10 @@ export class SymbolStudioComponent {
   @ViewChild('artboard') artboard?:ElementRef<SVGSVGElement>;
   private history=new SymbolEditHistory(restored());
   readonly model=signal<VectorSymbol>(this.history.document);
-  readonly selectedId=signal<string|null>('blade');
-  readonly selectedIds=signal<readonly string[]>(['blade']);
+  readonly selectedId=signal<string|null>(
+    [...indexVectorNodes(this.history.document).values()].find(n=>n.kind!=='group')?.id??null);
+  readonly selectedIds=signal<readonly string[]>(
+    this.selectedId()?[this.selectedId()!]:[]);
   readonly activeState=signal<string>('BASE');
   readonly activeTool=signal<Tool>('select');
   readonly snapEnabled=signal(true);
