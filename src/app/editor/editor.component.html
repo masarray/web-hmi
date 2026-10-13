@@ -687,23 +687,6 @@
                   r="3.3" fill="#e9c681"/>
               </g>
             }
-            @if(wiringMode() && !previewMode()){
-              @for(port of interactivePorts();track port.shapeId+'/'+port.portId){
-                <g class="direct-port" [class.chosen]="pendingWire()?.shapeId===port.shapeId &&
-                    pendingWire()?.portId===port.portId"
-                  [attr.data-connect-shape]="port.shapeId"
-                  [attr.data-connect-port]="port.portId"
-                  (pointerdown)="clickElectricalPort($event,port.shapeId,port.portId)">
-                  <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]" r="9"
-                    fill="transparent" stroke="none" pointer-events="all"/>
-                  <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]" r="4.8"
-                    [attr.fill]="pendingWire()?.shapeId===port.shapeId &&
-                      pendingWire()?.portId===port.portId?'#78e1b9':'#f1c878'"
-                    stroke="#203746" stroke-width="1.8" pointer-events="none"/>
-                  <title>{{port.name}} · {{port.portId}}</title>
-                </g>
-              }
-            }
             @for(shape of activePage().shapes;track shape.id){
               <g class="canvas-node" [attr.data-shape-id]="shape.id"
                 [attr.data-visual-quality]="previewMode() && shape.kind==='symbol' && shape.tagId ? (vectorAppearance(shape)?.frame?.quality??dynamicState(shape)?.quality??stateOf(shape)?.quality) : null"
@@ -905,6 +888,23 @@
                   }
                 }
               </g>
+            }
+            @if(wiringMode() && !previewMode()){
+              @for(port of interactivePorts();track port.shapeId+'/'+port.portId){
+                <g class="direct-port" [class.chosen]="pendingWire()?.shapeId===port.shapeId &&
+                    pendingWire()?.portId===port.portId"
+                  [attr.data-connect-shape]="port.shapeId"
+                  [attr.data-connect-port]="port.portId"
+                  (pointerdown)="clickElectricalPort($event,port.shapeId,port.portId)">
+                  <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]" r="9"
+                    fill="transparent" stroke="none" pointer-events="all"/>
+                  <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]" r="4.8"
+                    [attr.fill]="pendingWire()?.shapeId===port.shapeId &&
+                      pendingWire()?.portId===port.portId?'#78e1b9':'#f1c878'"
+                    stroke="#203746" stroke-width="1.8" pointer-events="none"/>
+                  <title>{{port.name}} · {{port.portId}}</title>
+                </g>
+              }
             }
           </svg>
         </div>
