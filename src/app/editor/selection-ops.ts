@@ -82,5 +82,9 @@ export function deleteObjects(project:Project,ids:readonly string[]):Project {
   if(!page)return project;
   const shapes=page.shapes.filter(s=>!selected.has(s.id));
   if(shapes.length===page.shapes.length)return project;
-  return {...project,pages:project.pages.map(p=>p.id===page.id?{...p,shapes}:p)};
+  return {...project,pages:project.pages.map(p=>p.id===page.id?{
+    ...p,shapes,
+    ...(p.wires?{wires:p.wires.filter(w=>!selected.has(w.from.shapeId)&&
+      !selected.has(w.to.shapeId))}:{})
+  }:p)};
 }

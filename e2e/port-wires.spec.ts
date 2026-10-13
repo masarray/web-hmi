@@ -1,0 +1,62 @@
+import {test,expect} from '@playwright/test';
+
+test('two V2 instances connect via named terminals, attachment follows drag and exports',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Open Symbol Studio'}).click();
+  await page.getByRole('button',{name:'New Symbol'}).click();
+  await page.getByRole('textbox',{name:'Symbol name'}).fill('Wired Substation Switch');
+  await page.getByRole('textbox',{name:'Symbol name'}).press('Tab');
+  // Start with a pristine symbol with no ports. Create two real terminals
+  // so no invisible or hard-coded "CB default" wiring is assumed.
+  await page.getByRole('button',{name:'Connection Port Tool'}).click();
+  const board=page.locator('svg.studio-svg'),rect=await board.boundingBox();
+  expect(rect).not.toBeNull();
+  await page.mouse.click(rect!.x+rect!.width/2,rect!.y+rect!.height*.2);
+  await page.mouse.click(rect!.x+rect!.width/2,rect!.y+rect!.height*.8);
+  await expect(page.locator('[data-port-id]')).toHaveCount(2);
+  await page.getByRole('button',{name:'Save Symbol Studio'}).click();
+  await page.getByRole('button',{name:'Back to HMI Editor'}).click();
+  const add=page.getByRole('button',{name:'Add V2 Wired Substation Switch'});
+  await expect(add).toBeVisible();
+  await add.click();await add.click();
+  const layer=page.locator('.layers button').filter({hasText:'Wired Substation Switch'});
+  await expect(layer).toHaveCount(2);
+  await layer.first().click();
+  await layer.last().click({modifiers:['Shift']});
+  await expect(page.getByTestId('wire-connection-bar')).toBeVisible();
+  await page.getByRole('combobox',{name:'Wire from port'}).selectOption('P2');
+  await page.getByRole('combobox',{name:'Wire to port'}).selectOption('P1');
+  await page.getByRole('button',{name:'Connect selected electrical ports'}).click();
+  const link=page.locator('g.attached-wire');
+  await expect(link).toHaveCount(1);
+  const before=await link.locator('path').getAttribute('d');
+  // Move one endpoint independently; moving both selected symbols together
+  // must not be confused with verification of actual wire attachment.
+  await layer.last().click();
+  const object=page.locator('g.canvas-node').last();
+  const box=await object.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x+box!.width/2+100,box!.y+box!.height/2+40,{steps:6});
+  await page.mouse.up();
+  await expect(link.locator('path')).not.toHaveAttribute('d',before!);
+  const after=await link.locator('path').getAttribute('d');
+  await page.getByRole('button',{name:'Undo',exact:false}).first().click();
+  await expect(link.locator('path')).toHaveAttribute('d',before!);
+  await page.getByRole('button',{name:'Redo',exact:false}).first().click();
+  await expect(link.locator('path')).toHaveAttribute('d',after!);
+  const download=page.waitForEvent('download');
+  await page.getByRole('button',{name:'⇩ Export',exact:true}).click();
+  const file=await download,stream=await file.createReadStream();let body='';
+  for await(const chunk of stream)body+=chunk.toString();
+  const project=JSON.parse(body);
+  expect(project.pages[0].wires).toHaveLength(1);
+  expect(project.pages[0].wires[0].from.portId).toBe('P2');
+  expect(project.pages[0].wires[0].to.portId).toBe('P1');
+  await page.getByRole('button',{name:/Preview/}).click();
+  await expect(link).toHaveCount(1);
+  await page.getByRole('button',{name:/Exit Preview/}).click();
+  await page.getByRole('button',{name:/Remove wire/}).click();
+  await expect(link).toHaveCount(0);
+});
