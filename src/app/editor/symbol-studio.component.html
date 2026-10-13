@@ -1,0 +1,211 @@
+<section class="studio-root" aria-label="Symbol Studio" data-testid="symbol-studio">
+  <header class="studio-top">
+    <button type="button" class="back" (click)="closed.emit()" aria-label="Back to HMI Editor">← HMI Editor</button>
+    <div class="studio-brand"><strong>Symbol Studio</strong><span>Vector & state authoring</span></div>
+    <label class="studio-name">Name
+      <input aria-label="Symbol name" maxlength="80" [value]="model().name" (change)="changeName($event)">
+    </label>
+    <span class="stretch"></span>
+    <button type="button" (click)="undo()" [disabled]="!canUndo()" aria-label="Undo Symbol Studio">↶ Undo</button>
+    <button type="button" (click)="redo()" [disabled]="!canRedo()" aria-label="Redo Symbol Studio">↷ Redo</button>
+    <button type="button" (click)="newSymbol()" aria-label="New Symbol">＋ New</button>
+    <label class="import-file" title="Import an existing Symbol Studio V2 JSON">Import JSON
+      <input type="file" accept=".json,application/json" aria-label="Import Symbol Studio JSON"
+        hidden (change)="importSymbol($event)">
+    </label>
+    <button type="button" (click)="exportSymbol()" aria-label="Export Symbol Studio JSON">Export JSON</button>
+    <button type="button" class="save" (click)="save()" aria-label="Save Symbol Studio">Save</button>
+  </header>
+  <div class="studio-workspace">
+    <aside class="studio-left">
+      <div class="section-caption">VECTOR TOOLS</div>
+      <div class="studio-tools" aria-label="Symbol drawing tools">
+        <button type="button" [class.active]="activeTool()==='select'" (click)="setTool('select')" aria-label="Select Tool" title="Select / move">↖ <span>Select</span></button>
+        <button type="button" [class.active]="activeTool()==='line'" (click)="setTool('line')" aria-label="Line Tool" title="Draw a line">╱ <span>Line</span></button>
+        <button type="button" [class.active]="activeTool()==='rect'" (click)="setTool('rect')" aria-label="Rectangle Tool" title="Draw a rectangle">□ <span>Rect</span></button>
+        <button type="button" [class.active]="activeTool()==='ellipse'" (click)="setTool('ellipse')" aria-label="Ellipse Tool" title="Draw an ellipse">◯ <span>Ellipse</span></button>
+      </div>
+      <div class="section-caption separate">OBJECT LAYERS <span>{{model().nodes.length}} root</span></div>
+      <div class="studio-layers">
+        @for(row of layerRows();track row.id){
+          <button type="button" class="layer" [class.active]="selectedId()===row.id"
+            [style.padding-left.px]="12+row.level*14"
+            [attr.aria-label]="'Select '+row.label"
+            (click)="choose(row.id)" (dblclick)="isolate(row.id)"
+            (contextmenu)="showContext($event,row.id)">
+            <span class="layer-kind">{{row.node.kind==='line'?'╱':row.node.kind==='group'?'▣':row.node.kind==='rect'?'□':row.node.kind==='ellipse'?'◯':'◇'}}</span>
+            <span class="layer-name">{{row.label}}</span>
+            @if(!row.visible){<span class="hidden-mark" title="Hidden in current state">○</span>}
+          </button>
+        }
+      </div>
+      <div class="studio-left-foot">
+        <p>Drag on the artboard to draw. Select a line to edit both endpoints.</p>
+        <p>Right-click an element for actions. Ctrl+Z to undo, Escape to cancel a gesture.</p>
+      </div>
+    </aside>
+    <main class="studio-center">
+      <div class="studio-toolbar">
+        <strong>ARTBOARD</strong>
+        <span>{{model().viewBox[0]}} × {{model().viewBox[1]}} units</span>
+        @if(isolatedGroup()){
+          <button type="button" (click)="backToRoot()" aria-label="Exit group edit">↰ {{isolatedGroup()}} / Back</button>
+        }
+        <span class="stretch"></span>
+        <label class="inline-toggle"><input type="checkbox" aria-label="Snap to grid"
+          [checked]="snapEnabled()" (change)="snapEnabled.set($any($event.target).checked)"> Snap 5</label>
+        <span class="studio-mode">{{activeTool()==='select'?'Select & transform':'Draw '+activeTool()}}</span>
+      </div>
+      <div class="studio-stage">
+        <svg #artboard class="studio-svg" [attr.viewBox]="'0 0 '+model().viewBox[0]+' '+model().viewBox[1]"
+          preserveAspectRatio="xMidYMid meet" role="img" aria-label="Symbol Studio vector artboard"
+          (pointerdown)="beginArtboard($event)" (pointermove)="movePointer($event)"
+          (pointerup)="endPointer($event)" (pointercancel)="cancelPointer($event)">
+          <defs><pattern id="studio-grid" width="10" height="10" patternUnits="userSpaceOnUse">
+            <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#435b6c" stroke-width=".25" opacity=".5"/>
+          </pattern></defs>
+          <rect [attr.width]="model().viewBox[0]" [attr.height]="model().viewBox[1]"
+            fill="#10212d" data-testid="studio-background"/>
+          <rect [attr.width]="model().viewBox[0]" [attr.height]="model().viewBox[1]"
+            fill="url(#studio-grid)" pointer-events="none"/>
+          @for(row of visibleNodes();track row.id){
+            <g class="studio-object" [class.selected]="selectedId()===row.id"
+              [attr.data-node-id]="row.id"
+              [attr.transform]="'matrix('+row.matrix.a+' '+row.matrix.b+' '+row.matrix.c+' '+row.matrix.d+' '+row.matrix.e+' '+row.matrix.f+')'"
+              [attr.opacity]="row.paint?.opacity??1"
+              (pointerdown)="beginNode($event,row.id)" (contextmenu)="showContext($event,row.id)"
+              (dblclick)="isolate(row.id)">
+              @if(row.node.kind==='line'){
+                <line [attr.x1]="row.node.x1" [attr.y1]="row.node.y1"
+                  [attr.x2]="row.node.x2" [attr.y2]="row.node.y2"
+                  [attr.stroke]="row.paint?.stroke"
+                  [attr.stroke-width]="row.paint?.strokeWidth"
+                  stroke-linecap="round" fill="none"/>
+                <line [attr.x1]="row.node.x1" [attr.y1]="row.node.y1"
+                  [attr.x2]="row.node.x2" [attr.y2]="row.node.y2"
+                  stroke="transparent" stroke-width="8" pointer-events="stroke"/>
+              } @else if(row.node.kind==='rect'){
+                <rect [attr.x]="row.node.x" [attr.y]="row.node.y"
+                  [attr.width]="row.node.width" [attr.height]="row.node.height"
+                  [attr.fill]="row.paint?.fill" [attr.stroke]="row.paint?.stroke"
+                  [attr.stroke-width]="row.paint?.strokeWidth"/>
+              } @else if(row.node.kind==='ellipse'){
+                <ellipse [attr.cx]="row.node.cx" [attr.cy]="row.node.cy"
+                  [attr.rx]="row.node.rx" [attr.ry]="row.node.ry"
+                  [attr.fill]="row.paint?.fill" [attr.stroke]="row.paint?.stroke"
+                  [attr.stroke-width]="row.paint?.strokeWidth"/>
+              } @else if(row.node.kind==='path'){
+                <path [attr.d]="row.node.d" [attr.fill]="row.paint?.fill"
+                  [attr.stroke]="row.paint?.stroke" [attr.stroke-width]="row.paint?.strokeWidth"/>
+              } @else if(row.node.kind==='text'){
+                <text [attr.x]="row.node.x" [attr.y]="row.node.y"
+                  font-size="8" [attr.fill]="row.paint?.fill==='none'?row.paint?.stroke:row.paint?.fill">
+                  {{selectedState()?.overrides?.[row.id]?.text??row.node.text}}</text>
+              }
+            </g>
+          }
+          @if(drawingPreview();as drag){
+            @if(activeTool()==='line'){
+              <line [attr.x1]="drag.start[0]" [attr.y1]="drag.start[1]"
+                [attr.x2]="drag.end[0]" [attr.y2]="drag.end[1]"
+                stroke="#f0c97c" stroke-width="2" stroke-dasharray="3 2" pointer-events="none"/>
+            } @else {
+              <rect [attr.x]="Math.min(drag.start[0],drag.end[0])"
+                [attr.y]="Math.min(drag.start[1],drag.end[1])"
+                [attr.width]="Math.abs(drag.end[0]-drag.start[0])"
+                [attr.height]="Math.abs(drag.end[1]-drag.start[1])"
+                fill="#f0c97c22" stroke="#f0c97c" stroke-width="1" stroke-dasharray="3 2"
+                pointer-events="none"/>
+            }
+          }
+          @for(handle of selectedHandles();track handle.name){
+            @if(activeState()==='BASE'||handle.name==='rotate'){
+              <circle class="studio-handle" [class.rotate-handle]="handle.name==='rotate'"
+                [attr.data-handle]="handle.name" [attr.cx]="handle.x"
+                [attr.cy]="handle.y" r="3.2"
+                [attr.fill]="handle.name==='rotate'?'#ecc476':'#e7f5fc'"
+                stroke="#16516b" stroke-width="1"
+                (pointerdown)="beginHandle($event,handle.name)">
+                <title>{{handle.name}} handle</title>
+              </circle>
+            }
+          }
+        </svg>
+      </div>
+      <div class="studio-bottom">
+        <span class="good-dot"></span><span>{{status()}}</span>
+        <span class="stretch"></span><span>{{dirty()?'Unsaved edits':'Saved'}}</span>
+      </div>
+    </main>
+    <aside class="studio-right">
+      <div class="section-caption">STATES <span>LOCAL PREVIEW</span></div>
+      <div class="studio-states">
+        <button type="button" [class.active]="activeState()==='BASE'"
+          (click)="setState('BASE')">Base <span>Geometry</span></button>
+        @for(state of model().states;track state.id){
+          <button type="button" [class.active]="activeState()===state.id"
+            [attr.aria-label]="'Edit state '+state.label"
+            (click)="setState(state.id)">
+            {{state.label}}
+            <span>{{state.id==='OPEN'?'1':state.id==='CLOSED'?'2':state.id==='INTERMEDIATE'?'0':'3'}}</span>
+          </button>
+        }
+      </div>
+      <div class="section-caption separate">OBJECT PROPERTIES</div>
+      @if(selected();as node){
+        <div class="studio-properties">
+          <strong>{{node.name}}</strong>
+          <small>{{node.kind}} · {{node.id}}</small>
+          <div class="inspector-note">
+            {{activeState()==='BASE'?'Editing base geometry and appearance.':'Editing overrides only for '+activeState()+'. Other states stay unchanged.'}}
+          </div>
+          @if(node.kind!=='group'){
+            <label>Fill color
+              <input type="color" aria-label="Studio fill color"
+                [value]="appearance()?.style?.fill==='none'?'#142632':appearance()?.style?.fill"
+                (change)="propertyColor('fill',$event)">
+            </label>
+            <label>Stroke / border color
+              <input type="color" aria-label="Studio stroke color"
+                [value]="appearance()?.style?.stroke"
+                (change)="propertyColor('stroke',$event)">
+            </label>
+            <label>Opacity
+              <input type="number" min="0" max="1" step=".1" aria-label="Studio opacity"
+                [value]="appearance()?.style?.opacity" (change)="propertyNumber('opacity',$event)">
+            </label>
+          }
+          <label>Rotation (degrees)
+            <input type="number" min="-3600" max="3600" step="15"
+              aria-label="Studio rotation" [value]="appearance()?.transform?.rotation"
+              (change)="propertyNumber('rotation',$event)">
+          </label>
+          <label class="inline-toggle"><input type="checkbox" aria-label="Studio visible"
+            [checked]="appearance()?.visible??true" (change)="toggleVisible($event)"> Visible</label>
+          @if(activeState()!=='BASE'){
+            <div class="state-reset">
+              <span>Restore inherited values</span>
+              <button type="button" (click)="resetStateProperty('style.fill')">Fill</button>
+              <button type="button" (click)="resetStateProperty('style.stroke')">Stroke</button>
+              <button type="button" (click)="resetStateProperty('transform.rotation')">Rotation</button>
+              <button type="button" (click)="resetStateProperty('visible')">Visibility</button>
+            </div>
+          }
+          <div class="studio-actions">
+            <button type="button" (click)="duplicateSelected()">Duplicate</button>
+            <button type="button" (click)="deleteSelected()" class="delete">Delete</button>
+          </div>
+        </div>
+      } @else {
+        <div class="studio-empty">Choose a graphic element on the artboard or in Layers to edit its properties.</div>
+      }
+    </aside>
+  </div>
+  @if(context();as menu){
+    <div class="studio-context" [style.left.px]="menu.x" [style.top.px]="menu.y"
+      role="menu" aria-label="Graphic context menu">
+      <button type="button" role="menuitem" (click)="duplicateSelected()">Duplicate element</button>
+      <button type="button" role="menuitem" (click)="deleteSelected();context.set(null)">Delete element</button>
+    </div>
+  }
+</section>
