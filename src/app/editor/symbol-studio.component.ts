@@ -192,10 +192,10 @@ export class SymbolStudioComponent {
         edit={type:'replace',node:dragEndpointFromWorld(drag.source,drag.id,drag.handle,world)};
       }else if(drag.handle==='rotate'){
         const transform=rotateAroundPivot(drag.source,drag.id,drag.start,p,event.shiftKey);
-        edit=this.transformEdit(n,drag.id,transform);
+        edit=this.transformEdit(n,drag.id,transform,drag.handle,drag.source);
       }else if(drag.handle==='move'){
         const transform=moveNodeFromWorld(drag.source,drag.id,drag.start,world);
-        edit=this.transformEdit(n,drag.id,transform);
+        edit=this.transformEdit(n,drag.id,transform,drag.handle,drag.source);
       }else if(n.kind==='rect'){
         edit={type:'replace',node:resizeRectFromWorld(drag.source,drag.id,drag.handle,world)};
       }else if(n.kind==='ellipse'){
@@ -205,10 +205,20 @@ export class SymbolStudioComponent {
       this.model.set(this.history.document);
     }catch(err){this.status.set(err instanceof Error?err.message:String(err));}
   }
-  private transformEdit(node:VectorNode,id:string,transform:VectorTransform):SymbolEdit{
+  private transformEdit(node:VectorNode,id:string,transform:VectorTransform,
+    handle:'move'|'rotate',source:VectorSymbol):SymbolEdit{
     const stateId=this.activeState();
-    return stateId==='BASE'?{type:'replace',node:{...node,transform}}:
-      {type:'state-override',stateId,nodeId:id,patch:{transform}};
+    if(stateId==='BASE')return {type:'replace',node:{...node,transform}};
+    // Only adjust the active property; preserve unrelated state overrides.
+    const previous=source.states.find(x=>x.id===stateId)?.overrides[id]?.transform;
+    const patch=handle==='rotate'?{
+      rotation:(previous?.rotation??node.transform.rotation)+
+        (transform.rotation-node.transform.rotation)
+    }:{
+      x:(previous?.x??node.transform.x)+(transform.x-node.transform.x),
+      y:(previous?.y??node.transform.y)+(transform.y-node.transform.y)
+    };
+    return {type:'state-override',stateId,nodeId:id,patch:{transform:patch}};
   }
   endPointer(event:PointerEvent):void{
     if(this.drawing&&this.drawing.pointerId===event.pointerId){
@@ -311,10 +321,15 @@ export class SymbolStudioComponent {
     if(!indexVectorNodes(this.model()).has(id))this.selectedId.set(null);
   }
   newSymbol():void{
-    const def=parseVectorSymbol({...starter(),
-      id:randomId('user'),name:'Untitled Symbol'});
+    const base=starter();
+    const first=base.nodes.find(node=>node.kind==='line')!;
+    const blankLine={...first,id:'starter-line',name:'Starter line',
+      x1:30,y1:50,x2:70,y2:50,style:{...STYLE}};
+    const def=parseVectorSymbol({...base,id:randomId('user'),
+      name:'Untitled Symbol',nodes:[blankLine],
+      states:base.states.map(state=>({...state,overrides:{}}))});
     this.history=new SymbolEditHistory(def);this.model.set(def);
-    this.selectedId.set('blade');this.activeState.set('BASE');
+    this.selectedId.set('starter-line');this.activeState.set('BASE');
     this.canUndo.set(false);this.canRedo.set(false);this.dirty.set(true);
     this.status.set('New symbol · edit elements and states, then Save');
   }
