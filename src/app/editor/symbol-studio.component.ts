@@ -66,8 +66,9 @@ export class SymbolStudioComponent {
         this.model.set(this.history.document);
         // Open an existing symbol with a drawable child selected so the
         // property Inspector is immediately usable, including nested groups.
-        const first=[...indexVectorNodes(this.history.document).values()]
-          .find(node=>node.kind!=='group');
+        const candidates=[...indexVectorNodes(this.history.document).values()];
+        const first=candidates.find(node=>node.id==='blade')??
+          candidates.find(node=>node.kind!=='group');
         this.selectedId.set(first?.id??null);
         this.selectedIds.set(first?[first.id]:[]);
         this.isolatedGroup.set(null);
@@ -80,6 +81,7 @@ export class SymbolStudioComponent {
   private history=new SymbolEditHistory(restored());
   readonly model=signal<VectorSymbol>(this.history.document);
   readonly selectedId=signal<string|null>(
+    [...indexVectorNodes(this.history.document).values()].find(n=>n.id==='blade')?.id??
     [...indexVectorNodes(this.history.document).values()].find(n=>n.kind!=='group')?.id??null);
   readonly selectedIds=signal<readonly string[]>(
     this.selectedId()?[this.selectedId()!]:[]);
