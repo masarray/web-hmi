@@ -23,6 +23,8 @@ import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align
 import {SymbolStudioComponent} from './symbol-studio.component';
 import {parseVectorSymbolJson,type VectorSymbol} from './symbol-studio-model';
 import {projectVectorFrame,vectorSymbolIdAllowed,type RenderVectorSymbol} from './vector-runtime';
+import {connectPorts,removeWire,resolveWireSegments,portLocalPosition,
+ type WireTerminal,type WireSegment} from './port-wires.ts';
 
 const STORAGE_KEY='web-hmi.project.v1';
 const MODBUS_KEY='web-hmi.modbus-map.v1';
@@ -80,6 +82,9 @@ export class EditorComponent implements OnDestroy {
   readonly snapEnabled=signal(true);
   readonly gridVisible=signal(true);
   readonly previewMode=signal(false);
+  readonly wireMode=signal(false);
+  readonly pendingTerminal=signal<WireTerminal|null>(null);
+  readonly selectedWireId=signal<string|null>(null);
   readonly previewSource=signal<'local'|'server'>('local');
   readonly serverStatus=signal<StreamStatus>('disconnected');
   readonly serverKind=signal<'DEMO'|'MODBUS_LAB'|'MODBUS_TCP'>('DEMO');
@@ -141,6 +146,14 @@ export class EditorComponent implements OnDestroy {
     this.project().pages.find(p=>p.id===this.project().activePageId)!);
   readonly selected=computed(()=>
     this.activePage().shapes.find(s=>s.id===this.selectedId())??null);
+  readonly selectedWire=computed(()=>
+    this.activePage().wires?.find(w=>w.id===this.selectedWireId())??null);
+  /** Live geometry: reacts to temporary drag offsets and resize preview. */
+  readonly wireSegments=computed<WireSegment[]>(()=>resolveWireSegments(
+    this.project(),this.activePage(),shape=>({
+      x:this.displayX(shape),y:this.displayY(shape),
+      width:this.displayWidth(shape),height:this.displayHeight(shape)
+    })));
   readonly preview=signal<DragPreview|null>(null);
   readonly dragOffsets=signal<Record<string,{x:number;y:number}>>({});
   readonly trendOpen=signal(false);
@@ -933,17 +946,24 @@ export class EditorComponent implements OnDestroy {
 
 
   /** Selection is UI-only, not written into the versioned project. */
-  selectOnly(id:string|null):void{this.selectedIds.set(id?[id]:[]);}
+  selectOnly(id:string|null):void{
+    if(id)this.selectedWireId.set(null);
+    this.selectedIds.set(id?[id]:[]);
+  }
   selectFromEvent(id:string,e:MouseEvent|PointerEvent):void{
     if(this.previewMode())return;
     if(e.shiftKey||e.ctrlKey||e.metaKey){
+      this.selectedWireId.set(null);
       this.selectedIds.update(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
     }else if(!this.selectedIds().includes(id)||this.selectedIds().length!==1){
       this.selectOnly(id);
     }
   }
   selectAll():void{
-    if(!this.previewMode())this.selectedIds.set(this.activePage().shapes.map(s=>s.id));
+    if(!this.previewMode()){
+      this.selectedWireId.set(null);
+      this.selectedIds.set(this.activePage().shapes.map(s=>s.id));
+    }
   }
   alignSelection(mode:Align):void{
     if(this.previewMode()||this.selectionCount()<2)return;
@@ -961,6 +981,10 @@ export class EditorComponent implements OnDestroy {
   }
   private pruneSelection():void{
     const valid=new Set(this.activePage().shapes.map(s=>s.id));
+    if(this.selectedWireId()&&!this.activePage().wires?.some(w=>w.id===this.selectedWireId()))
+      this.selectedWireId.set(null);
+    const a=this.pendingTerminal();
+    if(a&&!valid.has(a.shapeId))this.pendingTerminal.set(null);
     this.selectedIds.update(ids=>ids.filter(id=>valid.has(id)));
   }
 
@@ -1072,7 +1096,8 @@ export class EditorComponent implements OnDestroy {
       if(existing<0&&catalog.length>=128)throw Error('Maximum 128 V2 symbols');
       const next=existing<0?[...catalog,def]:
         catalog.map(s=>s.id===def.id?def:s);
-      this.record({...this.project(),vectorSymbols:next});
+      // Reject replacing a symbol if an existing wire references a removed port.
+      this.record(parseProject({...this.project(),vectorSymbols:next}));
       this.status.set(def.name+' saved in HMI Library · ready to drag and bind');
     }catch(error){this.status.set('Symbol save rejected: '+String(error));}
   }
@@ -1297,6 +1322,63 @@ export class EditorComponent implements OnDestroy {
     this.record(deleteObjects(this.project(),this.selectedIds()));
     this.selectOnly(null);
   }
+  toggleWireMode():void{
+    if(this.previewMode())return;
+    this.wireMode.update(on=>!on);
+    this.pendingTerminal.set(null);
+    this.selectedWireId.set(null);
+    this.status.set(this.wireMode()?
+      'Wiring mode · select first connection port, then destination port':
+      'Wiring mode closed');
+  }
+  beginWireAtPort(e:PointerEvent,shape:Shape,portId:string):void{
+    if(!this.wireMode()||this.previewMode()||e.button!==0)return;
+    e.preventDefault();e.stopPropagation();
+    const current:WireTerminal={shapeId:shape.id,portId};
+    const start=this.pendingTerminal();
+    if(!start){
+      this.pendingTerminal.set(current);
+      this.status.set('Port '+portId+' selected · choose a port on another symbol');
+      return;
+    }
+    if(start.shapeId===shape.id&&start.portId===portId){
+      this.pendingTerminal.set(null);
+      this.status.set('Wire connection cancelled');
+      return;
+    }
+    try{
+      const id='wire-'+crypto.randomUUID();
+      this.record(connectPorts(this.project(),start,current,id));
+      this.pendingTerminal.set(null);
+      this.selectedWireId.set(id);
+      this.status.set('Attached electrical wire · drag either symbol to test connection');
+    }catch(error){
+      this.status.set('Cannot connect ports: '+String(error));
+      // Preserve source terminal for retry without requiring another click.
+    }
+  }
+  selectWire(e:PointerEvent,id:string):void{
+    if(this.previewMode()||this.wireMode()||e.button!==0)return;
+    e.preventDefault();e.stopPropagation();
+    this.selectedWireId.set(id);
+    this.selectOnly(null);
+  }
+  deleteSelectedWire():void{
+    const id=this.selectedWireId();
+    if(!id||this.previewMode())return;
+    this.record(removeWire(this.project(),id));
+    this.selectedWireId.set(null);
+    this.status.set('Connection removed · Undo to restore');
+  }
+  isPendingTerminal(shapeId:string,portId:string):boolean{
+    const a=this.pendingTerminal();
+    return a?.shapeId===shapeId&&a.portId===portId;
+  }
+  hmiPortPoint(shape:Shape,portId:string):readonly [number,number]{
+    const def=this.vectorSymbol(shape);
+    return def?portLocalPosition(def,{width:this.displayWidth(shape),
+      height:this.displayHeight(shape)},portId):[0,0];
+  }
   addPage():void {
     try {
       this.record(createPage(this.project()));
@@ -1306,6 +1388,7 @@ export class EditorComponent implements OnDestroy {
   selectPage(id:string):void {
     if (!this.project().pages.some(p=>p.id===id)) return;
     this.record({...this.project(),activePageId:id});
+    this.pendingTerminal.set(null);this.selectedWireId.set(null);
     this.selectOnly(null);
   }
   toggleGrid():void { this.gridVisible.update(v=>!v); }
@@ -1324,6 +1407,8 @@ export class EditorComponent implements OnDestroy {
     if(this.mappingOpen())this.mappingOpen.set(false);
     if(this.symbolBuilderOpen())this.symbolBuilderOpen.set(false);
     this.previewMode.update(v=>!v);
+    this.wireMode.set(false);this.pendingTerminal.set(null);
+    this.selectedWireId.set(null);
     this.selectOnly(null);
     this.freshnessClock.set(Date.now());
     this.rescheduleFreshness();
@@ -1352,7 +1437,11 @@ export class EditorComponent implements OnDestroy {
     return p?.id===s.id?p.height:s.height;
   }
   onCanvasDown():void {
-    if(!this.previewMode())this.selectOnly(null);
+    if(!this.previewMode()){
+      if(this.wireMode())this.pendingTerminal.set(null);
+      this.selectOnly(null);
+      this.selectedWireId.set(null);
+    }
   }
   private pointerToCanvas(e:Pick<PointerEvent,'clientX'|'clientY'>):{x:number;y:number}|null {
     const svg=this.viewport?.nativeElement;
@@ -1362,7 +1451,7 @@ export class EditorComponent implements OnDestroy {
     return {x:p.x,y:p.y};
   }
   beginDrag(e:PointerEvent,s:Shape):void{
-    if(e.button!==0||this.previewMode())return;
+    if(e.button!==0||this.previewMode()||this.wireMode())return;
     e.stopPropagation();
     if(e.shiftKey||e.ctrlKey||e.metaKey){
       this.selectFromEvent(s.id,e);return;
@@ -1474,7 +1563,11 @@ export class EditorComponent implements OnDestroy {
     const node=e.target as HTMLElement|null;
     if (node?.closest('input,textarea,[contenteditable="true"]')) return;
     const modifier=e.ctrlKey||e.metaKey;
-    if(e.key==='Escape'){this.selectOnly(null);return;}
+    if(e.key==='Escape'){
+      this.pendingTerminal.set(null);this.selectedWireId.set(null);
+      if(this.wireMode())this.wireMode.set(false);
+      this.selectOnly(null);return;
+    }
     if(modifier&&e.key.toLowerCase()==='a'&&!this.previewMode()){
       e.preventDefault();this.selectAll();return;
     }
@@ -1488,7 +1581,8 @@ export class EditorComponent implements OnDestroy {
       e.preventDefault();this.redo();return;
     }
     if (e.key==='Delete'||e.key==='Backspace') {
-      if(this.selectionCount()){e.preventDefault();this.removeSelected();}
+      if(this.selectedWireId()){e.preventDefault();this.deleteSelectedWire();}
+      else if(this.selectionCount()){e.preventDefault();this.removeSelected();}
       return;
     }
     const step=e.shiftKey?10:1;

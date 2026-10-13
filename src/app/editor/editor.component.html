@@ -564,7 +564,14 @@
       }
       <div class="canvas-toolbar">
         <span class="mode-pill">◇ SVG EDITOR</span>
-        <span class="hint">Shift+click: multi-select · drag selection to move · Ctrl+A: select all</span>
+        <span class="hint">{{wireMode()?'CONNECT PORTS · select source and destination':'Shift+click: multi-select · drag selection to move · Ctrl+A: select all'}}</span>
+        <button type="button" [class.on]="wireMode()" [disabled]="previewMode()"
+          (click)="toggleWireMode()" aria-label="Draw electrical wires"
+          [attr.aria-pressed]="wireMode()" title="Attach wire to two V2 symbol terminals">
+          ⎍ Wire</button>
+        @if(pendingTerminal();as start){
+          <span class="connection-pending" data-testid="wire-source">From {{start.portId}} · choose destination</span>
+        }
         <span class="grow"></span>
         <button type="button" (click)="selectAll()" aria-label="Select all objects (Ctrl+A)" title="Select all objects (Ctrl+A)">Select all</button>
         @if(selectionCount()>0){
@@ -635,6 +642,20 @@
             @if(gridVisible() && !previewMode()){
               <rect width="1200" height="700" fill="url(#canvas-grid)" pointer-events="none"/>
             }
+            @for(segment of wireSegments();track segment.wire.id){
+              <g class="port-wire" [attr.data-wire-id]="segment.wire.id">
+                <path class="port-wire-line" [attr.d]="segment.path"
+                  [class.active]="selectedWireId()===segment.wire.id"
+                  fill="none" stroke="#8bd4e9" stroke-width="3.2"
+                  stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+                @if(!previewMode()&&!wireMode()){
+                  <path class="port-wire-hit" [attr.d]="segment.path"
+                    stroke="transparent" stroke-width="16" fill="none"
+                    pointer-events="stroke"
+                    (pointerdown)="selectWire($event,segment.wire.id)"/>
+                }
+              </g>
+            }
             @for(shape of activePage().shapes;track shape.id){
               <g class="canvas-node" [attr.data-shape-id]="shape.id"
                 [attr.data-visual-quality]="previewMode() && shape.kind==='symbol' && shape.tagId ? (vectorAppearance(shape)?.frame?.quality??dynamicState(shape)?.quality??stateOf(shape)?.quality) : null"
@@ -679,18 +700,30 @@
                           <rect x="0" y="0" [attr.width]="def.viewBox[0]"
                             [attr.height]="def.viewBox[1]" fill="transparent"
                             pointer-events="all"/>
-                          @if(!previewMode() && selectionLookup().has(shape.id)){
+                          @if(!previewMode() && (selectionLookup().has(shape.id)||wireMode())){
                             @for(port of vectorPortList(def);track port.id){
-                              <g pointer-events="none" [attr.data-vector-port]="port.id">
+                              <g [attr.data-vector-port]="port.id"
+                                [class.port-pending]="isPendingTerminal(shape.id,port.id)"
+                                [attr.pointer-events]="wireMode()?'all':'none'"
+                                (pointerdown)="beginWireAtPort($event,shape,port.id)">
                                 <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
-                                  r="3.2" fill="#233d4b" stroke="#ffd184" stroke-width="1.5"/>
+                                  [attr.r]="wireMode()?7.5:3.2"
+                                  [attr.fill]="isPendingTerminal(shape.id,port.id)?'#f3b85d':'#233d4b'"
+                                  stroke="#ffd184" stroke-width="1.5"/>
                                 <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
-                                  r="1" fill="#ffd184"/>
+                                  r="1.4" fill="#ffd184"/>
+                                @if(wireMode()){
+                                  <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
+                                    r="11" stroke="#ffcd7d" stroke-width=".8" stroke-dasharray="2 2"
+                                    fill="transparent" pointer-events="none"/>
+                                }
+                                <title>{{port.id}} · {{wireMode()?'click to connect':'fixed electrical terminal'}}</title>
                               </g>
                             }
                           }
                           @for(row of appearance.rows;track row.node.id){
                             <g [attr.data-vector-part]="row.node.id"
+                              [attr.pointer-events]="wireMode()?'none':null"
                               [attr.transform]="'matrix('+row.matrix.a+' '+row.matrix.b+' '+row.matrix.c+' '+row.matrix.d+' '+row.matrix.e+' '+row.matrix.f+')'"
                               [attr.opacity]="row.style.opacity">
                               @if(row.node.kind==='line'){
@@ -847,7 +880,17 @@
 
     <aside class="inspector">
       <div class="pane-heading">PROPERTIES</div>
-      @if(selectionCount()>1){
+      @if(selectedWire();as selectedConnection){
+        <div class="inspector-section wire-inspector" data-testid="wire-inspector">
+          <h3>ELECTRICAL WIRE</h3>
+          <p>Connected to fixed terminals; moving or resizing either symbol updates the wire automatically.</p>
+          <div class="wire-endpoint-label">{{selectedConnection.from.shapeId}} / {{selectedConnection.from.portId}}</div>
+          <span class="wire-arrow">↓ connected to</span>
+          <div class="wire-endpoint-label">{{selectedConnection.to.shapeId}} / {{selectedConnection.to.portId}}</div>
+          <button type="button" class="danger" (click)="deleteSelectedWire()"
+            aria-label="Delete connected wire">Remove wire</button>
+        </div>
+      } @else if(selectionCount()>1){
         <div class="inspector-section selection-heading">
           <h3>MULTI-SELECTION</h3>
           <p>{{selectionCount()}} objects selected. Shift+click to add/remove, or drag selected objects together.</p>

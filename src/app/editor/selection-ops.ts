@@ -1,4 +1,5 @@
 import {isShape, type Project, type Shape} from './document.ts';
+import {pruneDeletedShapeWires} from './port-wires.ts';
 
 export type Align = 'left'|'center'|'right'|'top'|'middle'|'bottom';
 export type Axis = 'horizontal'|'vertical';
@@ -82,5 +83,6 @@ export function deleteObjects(project:Project,ids:readonly string[]):Project {
   if(!page)return project;
   const shapes=page.shapes.filter(s=>!selected.has(s.id));
   if(shapes.length===page.shapes.length)return project;
-  return {...project,pages:project.pages.map(p=>p.id===page.id?{...p,shapes}:p)};
+  return {...project,pages:project.pages.map(p=>p.id===page.id?
+    pruneDeletedShapeWires(p,shapes):p)};
 }
