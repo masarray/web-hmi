@@ -1,6 +1,14 @@
 # Web HMI Studio
 
-Editor-first Angular-based engineering workspace for a future Web HMI/SCADA server. This is **not** yet an operational SCADA system.
+Editor-first Angular-based engineering workspace for a future Web HMI/SCADA server. This is **not** yet a fully commissioned operational SCADA system.
+
+> **New coding thread / contributor?** Start with **[HANDOFF.md](HANDOFF.md)** for the verified current baseline, merged PRs, source map, CI/Pages safeguards and next meaningful milestones. **[AGENTS.md](AGENTS.md)** gives the mandatory working rules. Don't start from a previous chat's stale branch or an overlapping draft PR.
+>
+> **Public UI:** https://masarray.github.io/web-hmi/ — publishes the **actual CI-green Angular app from `main`**, not a separate demo. Features that use Node/Modbus/WebSocket need a running backend; static GitHub Pages alone cannot connect to a PLC.
+
+## Symbol Studio V2 and electrical connections
+
+The app now includes a separate visual Symbol Studio with custom drawing and state-specific element properties; fixed port and rotation-pivot authoring; save/export/import into the project-scoped vector symbol library; drag/drop instances, tag binding and quality-aware Preview. HMI electrical wires connect **named terminals of specific V2 instances**, follow position/size changes, and can be created by clicking source and destination terminals in **Wire Terminals** mode. The earlier selection/dropdown Connect workflow remains available. **Obstacle-aware routing, advanced path-node editing, full transitions/easing design and shared cross-project symbol catalogs are not yet delivered.** See [handoff](HANDOFF.md) and [roadmap #19](https://github.com/masarray/web-hmi/issues/19).
 
 ## Quick start
 
@@ -17,7 +25,7 @@ Open http://127.0.0.1:4200. Quality gates: `npm run check`.
 
 SVG palette, select/drag, inspector, undo/redo, pages, snap grid, typed document model, validated JSON import/export, local browser save, strict typechecking and CI static build artifact.
 
-**Excluded until later milestones:** PLC/IED drivers, server database, shared projects, authentication, operational tags, alarms and industrial controls. Tag binding text is metadata only.
+*Historical note:* this paragraph documents the initial editor-only scope. **Read-only Modbus, multi-PLC, live tag transport, Alarms and Trends/Historian were subsequently added** as CP milestones described below. Industrial write controls, authentication/shared-project infrastructure and commissioned production SCADA guarantees are still out of scope.
 
 ## FUXA reference
 
