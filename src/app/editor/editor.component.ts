@@ -110,8 +110,10 @@ export class EditorComponent implements OnDestroy {
   connectSelectedPorts():void{
     if(this.previewMode())return;
     const pair=this.wirePair();if(!pair)return;
-    const fromPort=this.wireFromPort()||pair.fromPorts[0]!;
-    const toPort=this.wireToPort()||pair.toPorts[0]!;
+    const fromPort=pair.fromPorts.includes(this.wireFromPort())?
+      this.wireFromPort():pair.fromPorts[0]!;
+    const toPort=pair.toPorts.includes(this.wireToPort())?
+      this.wireToPort():pair.toPorts[0]!;
     try{
       const from:PortRef={shapeId:pair.fromShape.id,portId:fromPort};
       const to:PortRef={shapeId:pair.toShape.id,portId:toPort};
