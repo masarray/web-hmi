@@ -43,6 +43,9 @@ test('Pivot tool: moving blade rotation hinge changes OPEN pose but preserves BA
   const original=page.locator('[data-node-id=blade] line').first();
   await expect(original).toHaveAttribute('x1','50');
   await page.getByRole('button',{name:'Pivot Tool'}).click();
+  // Pivot edits target the selected graphic, not the complete symbol.
+  await page.getByRole('button',{name:'Select blade'}).click();
+  await expect(page.locator('.studio-properties strong')).toHaveText('blade');
   await expect(page.getByTestId('pivot-handle')).toBeVisible();
   const handle=await page.getByTestId('pivot-handle').boundingBox();
   expect(handle).not.toBeNull();
