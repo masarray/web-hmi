@@ -946,17 +946,24 @@ export class EditorComponent implements OnDestroy {
 
 
   /** Selection is UI-only, not written into the versioned project. */
-  selectOnly(id:string|null):void{this.selectedIds.set(id?[id]:[]);}
+  selectOnly(id:string|null):void{
+    if(id)this.selectedWireId.set(null);
+    this.selectedIds.set(id?[id]:[]);
+  }
   selectFromEvent(id:string,e:MouseEvent|PointerEvent):void{
     if(this.previewMode())return;
     if(e.shiftKey||e.ctrlKey||e.metaKey){
+      this.selectedWireId.set(null);
       this.selectedIds.update(ids=>ids.includes(id)?ids.filter(x=>x!==id):[...ids,id]);
     }else if(!this.selectedIds().includes(id)||this.selectedIds().length!==1){
       this.selectOnly(id);
     }
   }
   selectAll():void{
-    if(!this.previewMode())this.selectedIds.set(this.activePage().shapes.map(s=>s.id));
+    if(!this.previewMode()){
+      this.selectedWireId.set(null);
+      this.selectedIds.set(this.activePage().shapes.map(s=>s.id));
+    }
   }
   alignSelection(mode:Align):void{
     if(this.previewMode()||this.selectionCount()<2)return;
@@ -974,6 +981,10 @@ export class EditorComponent implements OnDestroy {
   }
   private pruneSelection():void{
     const valid=new Set(this.activePage().shapes.map(s=>s.id));
+    if(this.selectedWireId()&&!this.activePage().wires?.some(w=>w.id===this.selectedWireId()))
+      this.selectedWireId.set(null);
+    const a=this.pendingTerminal();
+    if(a&&!valid.has(a.shapeId))this.pendingTerminal.set(null);
     this.selectedIds.update(ids=>ids.filter(id=>valid.has(id)));
   }
 
@@ -1377,6 +1388,7 @@ export class EditorComponent implements OnDestroy {
   selectPage(id:string):void {
     if (!this.project().pages.some(p=>p.id===id)) return;
     this.record({...this.project(),activePageId:id});
+    this.pendingTerminal.set(null);this.selectedWireId.set(null);
     this.selectOnly(null);
   }
   toggleGrid():void { this.gridVisible.update(v=>!v); }
