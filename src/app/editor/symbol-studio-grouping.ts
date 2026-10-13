@@ -140,3 +140,55 @@ export function ungroupVectorNode(doc:VectorSymbol,id:string):VectorSymbol{
   });
   return parseVectorSymbol(next);
 }
+
+/** Deep copy including descendants and each state override. */
+export function duplicateVectorSubtree(doc:VectorSymbol,id:string,
+  idMap:Readonly<Record<string,string>>,offset=10):VectorSymbol{
+  const locations=nodeLocations(doc),where=locations.get(id);
+  if(!where)throw Error('Unknown duplicate target');
+  let target:VectorNode|undefined;
+  function find(nodes:readonly VectorNode[]):void{
+    for(const node of nodes){
+      if(node.id===id){target=node;return;}
+      if(node.kind==='group')find(node.children);
+      if(target)return;
+    }
+  }
+  find(doc.nodes);
+  if(!target)throw Error('Missing duplicate subtree');
+  const selected=new Set<string>();
+  const clone=(node:VectorNode,root:boolean):VectorNode=>{
+    const newId=idMap[node.id];
+    if(!newId||selected.has(newId)||locations.has(newId))
+      throw Error('Duplicate needs a distinct ID for every nested element');
+    selected.add(newId);
+    const transform=root?{...node.transform,x:node.transform.x+offset,
+      y:node.transform.y+offset}:node.transform;
+    const name=root?(node.name+' copy').slice(0,80):node.name;
+    if(node.kind==='group')return {...node,id:newId,name,transform,
+      children:node.children.map(n=>clone(n,false))};
+    return {...node,id:newId,name,transform};
+  };
+  const duplicate=clone(target,true);
+  const states=doc.states.map(state=>{
+    const overrides={...state.overrides};
+    for(const [oldId,newId] of Object.entries(idMap)){
+      if(state.overrides[oldId]){
+        const old=state.overrides[oldId]!;
+        const patch=oldId===id && old.transform?{
+          ...old,transform:{...old.transform,
+            ...(old.transform.x!==undefined?{x:old.transform.x+offset}:{}),
+            ...(old.transform.y!==undefined?{y:old.transform.y+offset}:{})}
+        }:old;
+        overrides[newId]=patch;
+      }
+    }
+    return {...state,overrides};
+  });
+  const next=updateChildren({...doc,states},where.parentId,nodes=>{
+    const pos=nodes.findIndex(n=>n.id===id);
+    if(pos<0)throw Error('Duplicate target disappeared');
+    return [...nodes.slice(0,pos+1),duplicate,...nodes.slice(pos+1)];
+  });
+  return parseVectorSymbol(next);
+}
