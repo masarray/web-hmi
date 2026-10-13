@@ -63,7 +63,11 @@ export class SymbolStudioComponent {
         this.loadedDefinition=JSON.stringify(incoming);
         this.history=new SymbolEditHistory(parseVectorSymbol(incoming));
         this.model.set(this.history.document);
-        this.selectedId.set(null);
+        // Open an existing symbol with a drawable child selected so the
+        // property Inspector is immediately usable, including nested groups.
+        const first=[...indexVectorNodes(this.history.document).values()]
+          .find(node=>node.kind!=='group');
+        this.selectedId.set(first?.id??null);
         this.activeState.set('BASE');
         this.canUndo.set(false);this.canRedo.set(false);this.dirty.set(false);
       }
