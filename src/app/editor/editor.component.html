@@ -707,15 +707,15 @@
                                 [attr.pointer-events]="wireMode()?'all':'none'"
                                 (pointerdown)="beginWireAtPort($event,shape,port.id)">
                                 <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
-                                  [attr.r]="wireMode()?5.5:3.2"
+                                  [attr.r]="wireMode()?7.5:3.2"
                                   [attr.fill]="isPendingTerminal(shape.id,port.id)?'#f3b85d':'#233d4b'"
                                   stroke="#ffd184" stroke-width="1.5"/>
                                 <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
                                   r="1.4" fill="#ffd184"/>
                                 @if(wireMode()){
                                   <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
-                                    r="9" stroke="#ffcd7d" stroke-width=".8" stroke-dasharray="2 2"
-                                    fill="transparent" pointer-events="all"/>
+                                    r="11" stroke="#ffcd7d" stroke-width=".8" stroke-dasharray="2 2"
+                                    fill="transparent" pointer-events="none"/>
                                 }
                                 <title>{{port.id}} · {{wireMode()?'click to connect':'fixed electrical terminal'}}</title>
                               </g>
