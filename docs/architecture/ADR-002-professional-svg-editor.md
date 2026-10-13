@@ -1,7 +1,7 @@
 # ADR-002 — Professional SVG Editor Engine for Web HMI Studio
 
-Status: **Accepted design direction, implementation pending**.
-Baseline: `main` `8b57fa835123feed37b67732096f349459d4d2ef` (CP-15). No existing production behavior is replaced by this ADR.
+Status: **Accepted target architecture; partially implemented via Symbol Studio V2 and wiring milestones** (2026-10-13). The SVG.js plugin adapter described below is **not yet integrated**, and full native editor parity is not claimed.
+Historical baseline for this design decision: `8b57fa835123feed37b67732096f349459d4d2ef` (CP-15). **Do not use this SHA as a code base**; read [HANDOFF.md](../../HANDOFF.md), latest `main`, Issue #19 and the actual source code before continuing.
 
 ## Problem statement / evidence from code
 

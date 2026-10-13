@@ -1,6 +1,6 @@
 # Symbol Studio V2 — product and acceptance contract
 
-Status: specification and UX test contract. **Not yet implemented.**
+Status: **historical UX/acceptance contract with partial implementation delivered** (as of 2026-10-13). Symbol Studio, grouping, state-aware library/runtime, pivots, ports and direct HMI wire connections are merged; advanced path editing, animation-transition designer, polished native adapter, obstacle routing and shared library are not. **For current release SHA, implementation proof and next-thread instructions read [HANDOFF.md](../../HANDOFF.md), Issue #19 and the current code.** The tables below remain desired full acceptance targets, not assertions that every interaction is already shipped.
 
 ## Primary user task
 
