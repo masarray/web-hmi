@@ -679,6 +679,16 @@
                           <rect x="0" y="0" [attr.width]="def.viewBox[0]"
                             [attr.height]="def.viewBox[1]" fill="transparent"
                             pointer-events="all"/>
+                          @if(!previewMode() && selectionLookup().has(shape.id)){
+                            @for(port of vectorPortList(def);track port.id){
+                              <g pointer-events="none" [attr.data-vector-port]="port.id">
+                                <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
+                                  r="3.2" fill="#233d4b" stroke="#ffd184" stroke-width="1.5"/>
+                                <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]"
+                                  r="1" fill="#ffd184"/>
+                              </g>
+                            }
+                          }
                           @for(row of appearance.rows;track row.node.id){
                             <g [attr.data-vector-part]="row.node.id"
                               [attr.transform]="'matrix('+row.matrix.a+' '+row.matrix.b+' '+row.matrix.c+' '+row.matrix.d+' '+row.matrix.e+' '+row.matrix.f+')'"
