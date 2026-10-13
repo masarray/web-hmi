@@ -10,13 +10,6 @@ test('Symbol Studio Save flows into HMI library, drag-ready instance, bound tag 
   await page.locator('input[aria-label="Studio stroke color"]').fill('#44cc88');
   await page.locator('input[aria-label="Studio stroke color"]').dispatchEvent('change');
   await page.getByRole('button',{name:'Save Symbol Studio'}).click();
-  const saved=await page.evaluate(()=>{
-    const raw=localStorage.getItem('web-hmi.project.v1');
-    const p=raw?JSON.parse(raw):null;
-    return {catalog:p?.vectorSymbols?.map((x:{id:string;name:string})=>x.name)??[],
-      hasProject:!!p,studio:!!localStorage.getItem('web-hmi.symbol-studio.v2')};
-  });
-  console.log('V2_LIBRARY_DIAGNOSTIC',JSON.stringify(saved));
   await page.getByRole('button',{name:'Back to HMI Editor'}).click();
   const library=page.getByRole('button',{name:'Add V2 Test V2 Switch'});
   await expect(library).toBeVisible();
@@ -46,13 +39,6 @@ test('editing a placed V2 symbol updates definition once and preserves instance 
   await page.getByRole('textbox',{name:'Symbol name'}).fill('Editable V2 Switch');
   await page.getByRole('textbox',{name:'Symbol name'}).press('Tab');
   await page.getByRole('button',{name:'Save Symbol Studio'}).click();
-  const saved=await page.evaluate(()=>{
-    const raw=localStorage.getItem('web-hmi.project.v1');
-    const p=raw?JSON.parse(raw):null;
-    return {catalog:p?.vectorSymbols?.map((x:{id:string;name:string})=>x.name)??[],
-      hasProject:!!p,studio:!!localStorage.getItem('web-hmi.symbol-studio.v2')};
-  });
-  console.log('V2_LIBRARY_DIAGNOSTIC',JSON.stringify(saved));
   await page.getByRole('button',{name:'Back to HMI Editor'}).click();
   await page.getByRole('button',{name:'Add V2 Editable V2 Switch'}).click();
   await page.getByLabel('Tag identifier').fill('BayA/XCBR1.Pos.stVal');
