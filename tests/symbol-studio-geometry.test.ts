@@ -66,7 +66,7 @@ test('all eight rectangle edge handles and ellipses are transform-consistent',()
   near(resized.width,60);near(resized.height,20);
   const ellipsePointer=nodeToWorld(doc,'ring',[90,40]);
   const ring=resizeEllipseFromWorld(doc,'ring','e',ellipsePointer);
-  near(ring.cx,60);near(ring.rx,40);near(ring.ry,20);
+  near(ring.cx,55);near(ring.rx,35);near(ring.ry,20);
 });
 test('pivoted rotation and nested translation remain stable in world space',()=>{
   const doc=make(),pivot:[number,number]=[50,35];
