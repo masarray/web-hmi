@@ -111,3 +111,20 @@ button:disabled{opacity:.35;cursor:default}
  padding-left:8px;font-size:10px!important}
 .studio-context button:focus-visible,.layer:focus-visible,.group-toolbar button:focus-visible{
  outline:2px solid #9bdcf1;outline-offset:1px}
+
+/* Electrical terminals remain fixed in definition coordinates, independent of blade states. */
+.studio-port,.studio-pivot{cursor:grab;pointer-events:all;touch-action:none}
+.studio-port:active,.studio-pivot:active{cursor:grabbing}
+.studio-port-list{padding:0 10px 5px;display:grid;gap:6px}
+.studio-port-row{display:grid;grid-template-columns:minmax(0,1fr) 46px 46px 22px;
+ gap:4px;align-items:center}
+.studio-port-row input{width:100%;min-width:0;padding:6px 4px;border-radius:4px;
+ background:#102a39;color:#e4f4fc;border:1px solid #416274;font:11px "Segoe UI",Arial,sans-serif}
+.studio-port-row input[type=number]{appearance:textfield;text-align:center}
+.studio-port-row button{padding:5px 0;border:1px solid #684957;color:#f3aab3}
+.studio-port-empty{font-size:11px;line-height:1.45;color:#82a4b4;padding:1px 4px 4px}
+.pivot-editor{border:1px solid #526374;background:#1b3545;border-radius:6px;
+ padding:9px;display:grid;gap:7px}
+.pivot-editor>span{font-size:10px;color:#e6c785}
+.pivot-coords{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pivot-editor>button{background:#254c61;border:1px solid #3d7084;font-size:11px;padding:7px 8px}
