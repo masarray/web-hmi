@@ -578,6 +578,22 @@
         <button type="button" (click)="zoomBy(0.1)">＋</button>
         <button type="button" (click)="zoom.set(1)" title="Reset zoom to 100%">100%</button>
       </div>
+      @if(!previewMode()){
+        <div class="wire-direct-control">
+          <button type="button" aria-label="Connect by clicking electrical ports"
+            [class.on]="wiringMode()" [attr.aria-pressed]="wiringMode()"
+            (click)="toggleWiringMode()">⊙ {{wiringMode()?'Exit Port Connect':'Connect Ports on Canvas'}}</button>
+          @if(wiringMode()){
+            <span role="status">{{pendingWire()?
+              'Source selected: '+pendingWire()!.portId+' · click destination port':
+              'Click a gold terminal on the source symbol, then on the destination'}}</span>
+            @if(pendingWire()){
+              <button type="button" aria-label="Cancel pending wire"
+                (click)="pendingWire.set(null)">Cancel</button>
+            }
+          }
+        </div>
+      }
       @if(!previewMode() && (wirePair() || wires().length)){
         <div class="wire-connection-bar" aria-label="Electrical port wiring" data-testid="wire-connection-bar">
           <strong>PORT WIRES</strong>
@@ -670,6 +686,23 @@
                 <circle [attr.cx]="wire.toPoint[0]" [attr.cy]="wire.toPoint[1]"
                   r="3.3" fill="#e9c681"/>
               </g>
+            }
+            @if(wiringMode() && !previewMode()){
+              @for(port of interactivePorts();track port.shapeId+'/'+port.portId){
+                <g class="direct-port" [class.chosen]="pendingWire()?.shapeId===port.shapeId &&
+                    pendingWire()?.portId===port.portId"
+                  [attr.data-connect-shape]="port.shapeId"
+                  [attr.data-connect-port]="port.portId"
+                  (pointerdown)="clickElectricalPort($event,port.shapeId,port.portId)">
+                  <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]" r="9"
+                    fill="transparent" stroke="none" pointer-events="all"/>
+                  <circle [attr.cx]="port.point[0]" [attr.cy]="port.point[1]" r="4.8"
+                    [attr.fill]="pendingWire()?.shapeId===port.shapeId &&
+                      pendingWire()?.portId===port.portId?'#78e1b9':'#f1c878'"
+                    stroke="#203746" stroke-width="1.8" pointer-events="none"/>
+                  <title>{{port.name}} · {{port.portId}}</title>
+                </g>
+              }
             }
             @for(shape of activePage().shapes;track shape.id){
               <g class="canvas-node" [attr.data-shape-id]="shape.id"
