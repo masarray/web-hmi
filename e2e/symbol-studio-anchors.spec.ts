@@ -57,8 +57,9 @@ test('Pivot tool: moving blade rotation hinge changes OPEN pose but preserves BA
   await expect(page.getByRole('spinbutton',{name:'Pivot Y'})).not.toHaveValue('35');
   await expect(original).toHaveAttribute('x1','50');
   await page.getByRole('button',{name:'Edit state Open'}).click();
-  const stateAngle=await page.getByRole('spinbutton',{name:'Studio rotation'}).inputValue();
-  expect(Number(stateAngle)).not.toBe(0);
+  // Angular state rendering can settle one frame after the state button click.
+  // Assert the actual OPEN blade rotation with Playwright's retrying assertion.
+  await expect(page.getByRole('spinbutton',{name:'Studio rotation'})).toHaveValue('-60');
   const moved=page.locator('[data-node-id=blade]').getAttribute('transform');
   const pos=await moved;
   await page.getByRole('button',{name:'Undo Symbol Studio'}).click();
