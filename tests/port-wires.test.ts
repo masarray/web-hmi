@@ -50,6 +50,8 @@ test('reject dangling/missing port, duplicates/reverse-duplicate and same-symbol
   assert.throws(()=>connectPorts(p,to,from,'wire-2'),/duplicate/i);
   assert.throws(()=>connectPorts(p,from,to,'wire-1'),/duplicate/i);
   assert.throws(()=>connectPorts(p,from,{shapeId:b.id,portId:'missing'},'wire-2'),/dangling/i);
+  assert.throws(()=>connectPorts(p,from,{shapeId:b.id,portId:'__proto__'},'wire-2'),/dangling/i);
+  assert.throws(()=>connectPorts(p,from,{shapeId:b.id,portId:'constructor'},'wire-2'),/dangling/i);
   assert.throws(()=>connectPorts(p,from,{shapeId:a.id,portId:'bottom'},'wire-2'),/Invalid/);
   assert.throws(()=>connectPorts(p,from,{shapeId:'not-a-shape',portId:'top'},'wire-2'),/dangling/i);
   const exported=JSON.parse(JSON.stringify(p));
