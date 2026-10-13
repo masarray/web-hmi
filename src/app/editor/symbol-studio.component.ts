@@ -7,12 +7,12 @@ import {migrateDynamicSymbolV1,parseVectorSymbolJson,parseVectorSymbol,
 import {SymbolEditHistory,type SymbolEdit} from './symbol-studio-commands.ts';
 import {IDENTITY,product,transformMatrix,applyAffine,boundingHandles,
   dragEndpointFromWorld,moveNodeFromWorld,resizeRectFromWorld,
-  resizeEllipseFromWorld,rotateAroundPivot,worldToNode,type Affine,type EdgeHandle} from './symbol-studio-geometry.ts';
+  resizeEllipseFromWorld,rotateAroundPivot,worldToNode,nodeToWorld,type Affine,type EdgeHandle} from './symbol-studio-geometry.ts';
 import {nodeLocations} from './symbol-studio-grouping.ts';
 import {boundPort,nearestPort,reanchorFromWorld,pivotWorld} from './symbol-studio-anchors.ts';
 
 type Tool='select'|'line'|'rect'|'ellipse'|'port'|'pivot';
-type Handle='start'|'end'|EdgeHandle|'rotate';
+type Handle='start'|'end'|EdgeHandle|'rotate'|'pivot';
 type Gesture={id:string;pointerId:number;start:Vector2;source:VectorSymbol;handle:Handle|'move'};
 type Paint=VectorStyle;
 type Row={id:string;node:VectorNode;level:number;matrix:Affine;
@@ -275,6 +275,65 @@ export class SymbolStudioComponent {
     const target=this.selectedId()!;
     this.beginGesture(event,{id:target,pointerId:event.pointerId,start:p,
       source:this.model(),handle:'move'});
+  }
+  private nextPortId():string{
+    const ports=this.model().ports;
+    for(let i=1;i<=24;i++)if(!Object.hasOwn(ports,'P'+i))return 'P'+i;
+    throw Error('Maximum 24 connection ports');
+  }
+  addPortAt(world:Vector2):void{
+    try{
+      if(this.activeState()!=='BASE')this.activeState.set('BASE');
+      const id=this.nextPortId();
+      this.execute({type:'set-port',id,
+        point:boundPort(world,this.model().viewBox,this.snapEnabled())});
+      this.status.set('Added '+id+' · drag its circular handle to a wire terminal');
+    }catch(error){this.status.set(String(error));}
+  }
+  beginPortDrag(event:PointerEvent,id:string):void{
+    if(event.button!==0||this.activeTool()!=='port'||this.portDrag)return;
+    if(!Object.hasOwn(this.model().ports,id))return;
+    try{
+      this.history.beginGesture();this.portDrag={id,pointerId:event.pointerId};
+      this.capture(event);
+    }catch(error){this.status.set(String(error));}
+  }
+  setPortCoordinate(id:string,axis:0|1,event:Event):void{
+    const point=this.model().ports[id];if(!point)return;
+    const raw=Number((event.target as HTMLInputElement).value);
+    if(!Number.isFinite(raw))return;
+    const next:[number,number]=[...point];
+    next[axis]=raw;
+    this.execute({type:'set-port',id,point:boundPort(next,this.model().viewBox)});
+  }
+  renamePortFromInput(id:string,event:Event):void{
+    const nextId=(event.target as HTMLInputElement).value.trim();
+    if(!nextId||id===nextId)return;
+    try{
+      this.history.execute({type:'rename-port',id,nextId});
+      this.refresh();this.status.set('Renamed '+id+' to '+nextId);
+    }catch(error){this.status.set('Port rename rejected: '+String(error));}
+  }
+  deletePortById(id:string):void{
+    this.execute({type:'delete-port',id});
+    this.status.set('Removed '+id+' · Undo to restore');
+  }
+  beginPivotDrag(event:PointerEvent):void{
+    const id=this.selectedId(),p=this.point(event);
+    if(event.button!==0||this.activeTool()!=='pivot'||!id||!p)return;
+    this.beginGesture(event,{id,pointerId:event.pointerId,
+      start:p,source:this.model(),handle:'pivot'});
+  }
+  setPivotCoordinate(axis:0|1,event:Event):void{
+    const node=this.selected();if(!node)return;
+    const raw=Number((event.target as HTMLInputElement).value);
+    if(!Number.isFinite(raw))return;
+    const next:[number,number]=[...node.transform.pivot];
+    next[axis]=raw;
+    try{
+      const world=nodeToWorld(this.model(),node.id,next);
+      this.execute({type:'replace',node:reanchorFromWorld(this.model(),node.id,world)});
+    }catch(error){this.status.set(String(error));}
   }
   beginHandle(event:PointerEvent,handle:Handle):void{
     if(event.button!==0)return;
