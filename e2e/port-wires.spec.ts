@@ -30,6 +30,9 @@ test('two V2 instances connect via named terminals, attachment follows drag and 
   const link=page.locator('g.attached-wire');
   await expect(link).toHaveCount(1);
   const before=await link.locator('path').getAttribute('d');
+  // Move one endpoint independently; moving both selected symbols together
+  // must not be confused with verification of actual wire attachment.
+  await layer.last().click();
   const object=page.locator('g.canvas-node').last();
   const box=await object.boundingBox();
   expect(box).not.toBeNull();
