@@ -28,7 +28,8 @@ export function terminalValid(project:Pick<Project,'vectorSymbols'>,
   page:Page,term:WireTerminal):boolean{
   if(!term||!idValid(term.shapeId)||!idValid(term.portId))return false;
   const shape=validShape(page,term.shapeId);
-  return !!shape&&!!portDefinition(project,shape)?.ports[term.portId];
+  const definition=shape?portDefinition(project,shape):undefined;
+  return !!definition&&Object.hasOwn(definition.ports,term.portId);
 }
 function sameTerminal(a:WireTerminal,b:WireTerminal):boolean{
   return a.shapeId===b.shapeId&&a.portId===b.portId;
@@ -82,8 +83,9 @@ export function pruneDeletedShapeWires(page:Page,shapes:readonly Shape[]):Page{
 /** SVG preserveAspectRatio=xMidYMid meet, matching the actual nested SVG. */
 export function portLocalPosition(def:VectorSymbol,rect:Pick<ShapeRect,'width'|'height'>,
   portId:string):Vector2{
-  const port=def.ports[portId];
-  if(!port)throw Error('Missing electrical terminal '+portId);
+  if(!Object.hasOwn(def.ports,portId))
+    throw Error('Missing electrical terminal '+portId);
+  const port=def.ports[portId]!;
   const scale=Math.min(rect.width/def.viewBox[0],rect.height/def.viewBox[1]);
   const ox=(rect.width-def.viewBox[0]*scale)/2;
   const oy=(rect.height-def.viewBox[1]*scale)/2;
