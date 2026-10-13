@@ -17,6 +17,7 @@
       </button>
       <button type="button" aria-label="Configure Modbus tags" [class.on]="mappingOpen()"
         (click)="toggleMapping()">⚙ Devices & Tags</button>
+      <button type="button" (click)="symbolStudioOpen.set(true)" aria-label="Open Symbol Studio" title="Draw and animate custom SVG symbols">✎ Symbol Studio</button>
       <button type="button" (click)="exportProject()">⇩ Export</button>
       <label class="file-label">⇧ Import <input type="file" accept="application/json,.json" (change)="importProject($event)" hidden></label>
       <button type="button" class="primary" (click)="togglePreview()">{{previewMode()?'Exit Preview':'▶ Preview'}}</button>
@@ -953,3 +954,7 @@
   <footer class="statusbar"><span class="status-dot"></span>{{status()}}
     <span class="grow"></span><span>Local editor · No industrial connection</span><span class="version">v0.1.0</span></footer>
 </div>
+
+@if(symbolStudioOpen()){
+  <hmi-symbol-studio (closed)="symbolStudioOpen.set(false)"></hmi-symbol-studio>
+}
