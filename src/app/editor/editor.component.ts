@@ -23,6 +23,7 @@ import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align
 import {SymbolStudioComponent} from './symbol-studio.component';
 import {parseVectorSymbolJson,type VectorSymbol} from './symbol-studio-model';
 import {projectVectorFrame,vectorSymbolIdAllowed,type RenderVectorSymbol} from './vector-runtime';
+import {connectPorts,disconnectWire,routedPageWires,type PortRef} from './port-wires';
 
 const STORAGE_KEY='web-hmi.project.v1';
 const MODBUS_KEY='web-hmi.modbus-map.v1';
@@ -77,6 +78,54 @@ export class EditorComponent implements OnDestroy {
   readonly selectedId=computed(()=>this.selectedIds().length===1?this.selectedIds()[0]??null:null);
   readonly selectionCount=computed(()=>this.selectedIds().length);
   readonly selectionLookup=computed(()=>new Set(this.selectedIds()));
+  readonly wireFromPort=signal('');
+  readonly wireToPort=signal('');
+  readonly wirePair=computed(()=>{
+    const ids=this.selectedIds();
+    if(ids.length!==2)return null;
+    const page=this.activePage();
+    const shapes=ids.map(id=>page.shapes.find(s=>s.id===id));
+    if(shapes.some(s=>!s||s.kind!=='symbol'))return null;
+    const catalog=this.vectorCatalog();
+    const a=catalog.get(shapes[0]!.symbolId??'');
+    const b=catalog.get(shapes[1]!.symbolId??'');
+    if(!a||!b)return null;
+    const from=Object.keys(a.ports),to=Object.keys(b.ports);
+    return from.length&&to.length?{
+      fromShape:shapes[0]!,toShape:shapes[1]!,fromPorts:from,toPorts:to
+    }:null;
+  });
+  readonly wires=computed(()=>{
+    const positions=new Map<string,{x:number;y:number;width:number;height:number}>();
+    for(const shape of this.activePage().shapes){
+      const moved=this.dragOffsets()[shape.id];
+      const resized=this.preview()?.id===shape.id?this.preview():null;
+      if(moved||resized)positions.set(shape.id,{
+        x:moved?.x??shape.x,y:moved?.y??shape.y,
+        width:resized?.width??shape.width,height:resized?.height??shape.height
+      });
+    }
+    return routedPageWires(this.project(),positions);
+  });
+  connectSelectedPorts():void{
+    if(this.previewMode())return;
+    const pair=this.wirePair();if(!pair)return;
+    const fromPort=this.wireFromPort()||pair.fromPorts[0]!;
+    const toPort=this.wireToPort()||pair.toPorts[0]!;
+    try{
+      const from:PortRef={shapeId:pair.fromShape.id,portId:fromPort};
+      const to:PortRef={shapeId:pair.toShape.id,portId:toPort};
+      this.record(connectPorts(this.project(),from,to,
+        'wire-'+crypto.randomUUID().replaceAll('-','').slice(0,16)));
+      this.status.set('Connected '+pair.fromShape.name+' · '+fromPort+
+        ' to '+pair.toShape.name+' · '+toPort);
+    }catch(error){this.status.set('Wire rejected: '+String(error));}
+  }
+  removeWire(id:string):void{
+    if(this.previewMode())return;
+    this.record(disconnectWire(this.project(),id));
+    this.status.set('Connection removed · Undo to restore');
+  }
   readonly snapEnabled=signal(true);
   readonly gridVisible=signal(true);
   readonly previewMode=signal(false);
