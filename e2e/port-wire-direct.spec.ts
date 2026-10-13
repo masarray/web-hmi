@@ -26,7 +26,7 @@ test('click source and target electrical terminals to wire without selection dro
   await page.mouse.down();
   await page.mouse.move(box!.x+box!.width/2+270,box!.y+box!.height/2+80,{steps:8});
   await page.mouse.up();
-  await page.getByRole('button',{name:'Connect by clicking electrical ports'}).click();
+  await page.getByRole('button',{name:'Wire terminals on canvas'}).click();
   const sources=page.locator('g.direct-port[data-connect-port=P2]');
   await expect(sources).toHaveCount(2);
   await sources.first().locator('circle').first().click({force:true});
@@ -55,8 +55,8 @@ test('click source and target electrical terminals to wire without selection dro
 
 test('wiring mode cancellation creates no dangling project wires',async({page})=>{
   await page.goto('/');
-  await page.getByRole('button',{name:'Connect by clicking electrical ports'}).click();
-  await expect(page.getByRole('button',{name:'Connect by clicking electrical ports'})).toHaveAttribute('aria-pressed','true');
-  await page.getByRole('button',{name:'Connect by clicking electrical ports'}).click();
-  await expect(page.getByRole('button',{name:'Connect by clicking electrical ports'})).toHaveAttribute('aria-pressed','false');
+  await page.getByRole('button',{name:'Wire terminals on canvas'}).click();
+  await expect(page.getByRole('button',{name:'Wire terminals on canvas'})).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('button',{name:'Wire terminals on canvas'}).click();
+  await expect(page.getByRole('button',{name:'Wire terminals on canvas'})).toHaveAttribute('aria-pressed','false');
 });
