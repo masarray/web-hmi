@@ -87,6 +87,6 @@ test('wire can be selected and deleted with Undo restoring topology',async({page
   await expect(page.getByTestId('wire-inspector')).toBeVisible();
   await page.getByRole('button',{name:'Delete connected wire'}).click();
   await expect(page.locator('.port-wire-line')).toHaveCount(0);
-  await page.getByRole('button',{name:'Undo (Ctrl+Z)'}).click();
+  await page.locator('button[title="Undo (Ctrl+Z)"]').click();
   await expect(page.locator('.port-wire-line')).toHaveCount(1);
 });
