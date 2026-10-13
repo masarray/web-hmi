@@ -154,7 +154,7 @@ export class SymbolStudioComponent {
     if(event.button!==0)return;
     const id=this.selectedId(),p=this.point(event);
     if(!id||!p)return;
-    if(this.activeState()!=='BASE'&&handle!=='move'&&handle!=='rotate'){
+    if(this.activeState()!=='BASE'&&handle!=='rotate'){
       this.status.set('Endpoint and size geometry belong to Base; switch to Base to edit.');
       return;
     }
