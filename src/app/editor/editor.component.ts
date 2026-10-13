@@ -1026,7 +1026,7 @@ export class EditorComponent implements OnDestroy {
         if(this.vectorCatalog().has(customId))this.placeVectorSymbol(customId,
           this.round(point.x-45),this.round(point.y-45));
         else this.placeCustomSymbol(customId,this.round(point.x-45),this.round(point.y-45));
-      catch(error){this.status.set(String(error));}
+      }catch(error){this.status.set(String(error));}
       return;
     }
     const shape=symbolId?newSymbol(symbolId,this.activePage().shapes.length):
