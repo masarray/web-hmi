@@ -45,7 +45,7 @@ test('24-port limit fails closed and undo stores drag as single transaction',()=
   history.commitGesture();
   assert.equal(history.document.ports.top?.[0],42);
   history.undo();
-  assert.deepEqual(history.document.ports.top,[50,0]);
+  assert.deepEqual(history.document.ports.top,doc().ports.top);
   history.redo();
   assert.deepEqual(history.document.ports.top,[42,25]);
   history.execute({type:'rename-port',id:'top',nextId:'A'});
