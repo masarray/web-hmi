@@ -566,9 +566,9 @@
         <span class="mode-pill">◇ SVG EDITOR</span>
         <span class="hint">{{wireMode()?'CONNECT PORTS · select source and destination':'Shift+click: multi-select · drag selection to move · Ctrl+A: select all'}}</span>
         <button type="button" [class.on]="wireMode()" [disabled]="previewMode()"
-          (click)="toggleWireMode()" aria-label="Connect electrical ports"
+          (click)="toggleWireMode()" aria-label="Draw electrical wires"
           [attr.aria-pressed]="wireMode()" title="Attach wire to two V2 symbol terminals">
-          ⎍ Connect</button>
+          ⎍ Wire</button>
         @if(pendingTerminal();as start){
           <span class="connection-pending" data-testid="wire-source">From {{start.portId}} · choose destination</span>
         }
@@ -723,6 +723,7 @@
                           }
                           @for(row of appearance.rows;track row.node.id){
                             <g [attr.data-vector-part]="row.node.id"
+                              [attr.pointer-events]="wireMode()?'none':null"
                               [attr.transform]="'matrix('+row.matrix.a+' '+row.matrix.b+' '+row.matrix.c+' '+row.matrix.d+' '+row.matrix.e+' '+row.matrix.f+')'"
                               [attr.opacity]="row.style.opacity">
                               @if(row.node.kind==='line'){
