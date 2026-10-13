@@ -54,7 +54,7 @@ test('wires survive project roundtrip, reject dangling names and keep backward c
   assert.throws(()=>connectPorts(wired,{shapeId:'attached-a',portId:'top'},
     {shapeId:'attached-b',portId:'top'},'wire-1'),/Invalid/);
   const tampered=structuredClone(wired);
-  tampered.pages[0]!.wires![0]!.to.shapeId='deleted';
+  (tampered.pages[0]!.wires![0]!.to as {shapeId:string;portId:string}).shapeId='deleted';
   assert.throws(()=>parseProject(tampered),/Invalid/);
   assert.throws(()=>validatePageWires(Array.from({length:501},()=>({})),
     wired.pages[0]!.shapes,wired.vectorSymbols??[]),/Invalid/);
