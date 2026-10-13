@@ -118,8 +118,10 @@ export class SymbolEditHistory{
   private base:VectorSymbol|null=null;
   private readonly undoStack:VectorSymbol[]=[];
   private readonly redoStack:VectorSymbol[]=[];
-  constructor(source:VectorSymbol,private readonly limit=60){
+  private readonly limit:number;
+  constructor(source:VectorSymbol,limit=60){
     if(!Number.isInteger(limit)||limit<1||limit>200)throw Error('Invalid history limit');
+    this.limit=limit;
     this.committed=parseVectorSymbol(source);
   }
   get document():VectorSymbol{return this.draft??this.committed;}
