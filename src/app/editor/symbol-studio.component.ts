@@ -7,7 +7,8 @@ import {migrateDynamicSymbolV1,parseVectorSymbolJson,parseVectorSymbol,
 import {SymbolEditHistory,type SymbolEdit} from './symbol-studio-commands.ts';
 import {IDENTITY,product,transformMatrix,applyAffine,boundingHandles,
   dragEndpointFromWorld,moveNodeFromWorld,resizeRectFromWorld,
-  resizeEllipseFromWorld,rotateAroundPivot,type Affine,type EdgeHandle} from './symbol-studio-geometry.ts';
+  resizeEllipseFromWorld,rotateAroundPivot,worldToNode,type Affine,type EdgeHandle} from './symbol-studio-geometry.ts';
+import {nodeLocations} from './symbol-studio-grouping.ts';
 
 type Tool='select'|'line'|'rect'|'ellipse';
 type Handle='start'|'end'|EdgeHandle|'rotate';
@@ -65,9 +66,12 @@ export class SymbolStudioComponent {
         this.model.set(this.history.document);
         // Open an existing symbol with a drawable child selected so the
         // property Inspector is immediately usable, including nested groups.
-        const first=[...indexVectorNodes(this.history.document).values()]
-          .find(node=>node.kind!=='group');
+        const candidates=[...indexVectorNodes(this.history.document).values()];
+        const first=candidates.find(node=>node.id==='blade')??
+          candidates.find(node=>node.kind!=='group');
         this.selectedId.set(first?.id??null);
+        this.selectedIds.set(first?[first.id]:[]);
+        this.isolatedGroup.set(null);
         this.activeState.set('BASE');
         this.canUndo.set(false);this.canRedo.set(false);this.dirty.set(false);
       }
@@ -76,7 +80,11 @@ export class SymbolStudioComponent {
   @ViewChild('artboard') artboard?:ElementRef<SVGSVGElement>;
   private history=new SymbolEditHistory(restored());
   readonly model=signal<VectorSymbol>(this.history.document);
-  readonly selectedId=signal<string|null>('blade');
+  readonly selectedId=signal<string|null>(
+    [...indexVectorNodes(this.history.document).values()].find(n=>n.id==='blade')?.id??
+    [...indexVectorNodes(this.history.document).values()].find(n=>n.kind!=='group')?.id??null);
+  readonly selectedIds=signal<readonly string[]>(
+    this.selectedId()?[this.selectedId()!]:[]);
   readonly activeState=signal<string>('BASE');
   readonly activeTool=signal<Tool>('select');
   readonly snapEnabled=signal(true);
@@ -85,6 +93,14 @@ export class SymbolStudioComponent {
   readonly canUndo=signal(false);
   readonly canRedo=signal(false);
   readonly isolatedGroup=signal<string|null>(null);
+  readonly canGroup=computed(()=>{
+    const ids=this.selectedIds();
+    if(ids.length<2)return false;
+    const locations=nodeLocations(this.model());
+    const parent=locations.get(ids[0]!)?.parentId;
+    return ids.every(id=>locations.has(id)&&locations.get(id)!.parentId===parent);
+  });
+  readonly canUngroup=computed(()=>this.selected()?.kind==='group');
   readonly selected=computed(()=>indexVectorNodes(this.model()).get(this.selectedId()??'')??null);
   readonly selectedState=computed(()=>this.model().states.find(s=>s.id===this.activeState())??null);
   readonly appearance=computed(()=>this.selected()?effective(this.selected()!,this.selectedState()):null);
@@ -125,7 +141,12 @@ export class SymbolStudioComponent {
     list.push({name:'rotate',x:north[0],y:north[1]-18});
     return list;
   });
-  readonly visibleNodes=computed(()=>this.rows().filter(row=>row.node.kind!=='group'&&row.visible));
+  readonly visibleNodes=computed(()=>{
+    const focus=this.isolatedGroup();
+    const locations=nodeLocations(this.model());
+    return this.rows().filter(row=>row.node.kind!=='group'&&row.visible&&
+      (!focus||this.belongsToGroup(row.id,focus,locations)));
+  });
   readonly layerRows=computed(()=>this.rows());
   readonly dirty=signal(false);
   private gesture:Gesture|null=null;
@@ -137,14 +158,79 @@ export class SymbolStudioComponent {
       width:Math.abs(v.end[0]-v.start[0]),height:Math.abs(v.end[1]-v.start[1])}:null;
   });
 
-  setTool(tool:Tool):void{this.activeTool.set(tool);this.context.set(null);}
+  setTool(tool:Tool):void{
+    this.activeTool.set(tool);
+    if(tool!=='select')this.activeState.set('BASE');
+    this.context.set(null);
+  }
   setState(id:string):void{
     if(id==='BASE'||this.model().states.some(s=>s.id===id))this.activeState.set(id);
     this.context.set(null);
   }
-  choose(id:string):void{this.selectedId.set(id);this.context.set(null);}
+  private belongsToGroup(id:string,groupId:string,
+    locations:ReturnType<typeof nodeLocations>):boolean{
+    for(let at=locations.get(id)?.parentId;at!==undefined&&at!==null;
+      at=locations.get(at)?.parentId){
+      if(at===groupId)return true;
+    }
+    return false;
+  }
+  /** Outside group isolation, clicking its artwork selects the group. */
+  private focusTarget(id:string):string{
+    const locations=nodeLocations(this.model()),focus=this.isolatedGroup();
+    let current=id;
+    while(true){
+      const parent=locations.get(current)?.parentId;
+      if(parent===undefined||parent===null||parent===focus)return current;
+      current=parent;
+    }
+  }
+  choose(id:string,event?:MouseEvent|PointerEvent):void{
+    const target=this.focusTarget(id);
+    if(event&&(event.shiftKey||event.ctrlKey||event.metaKey)){
+      const selected=this.selectedIds();
+      const next=selected.includes(target)?selected.filter(x=>x!==target):
+        [...selected,target];
+      this.selectedIds.set(next);
+      this.selectedId.set(next.at(-1)??null);
+    }else{
+      this.selectedIds.set([target]);this.selectedId.set(target);
+    }
+    this.context.set(null);
+  }
+  groupSelected():void{
+    if(!this.canGroup()||this.gesture)return;
+    const id=randomId('group');
+    this.execute({type:'group',nodeIds:this.selectedIds(),groupId:id,name:'Group'});
+    if(indexVectorNodes(this.model()).has(id)){
+      this.selectedId.set(id);this.selectedIds.set([id]);
+      this.status.set('Group created · double-click to edit children');
+    }
+    this.context.set(null);
+  }
+  ungroupSelected():void{
+    const group=this.selected();
+    if(group?.kind!=='group'||this.gesture)return;
+    const children=group.children.map(x=>x.id);
+    this.execute({type:'ungroup',groupId:group.id});
+    if(!indexVectorNodes(this.model()).has(group.id)){
+      if(this.isolatedGroup()===group.id)this.isolatedGroup.set(null);
+      this.selectedIds.set(children);
+      this.selectedId.set(children.at(-1)??null);
+      this.status.set('Ungrouped · appearance and state overrides preserved');
+    }
+    this.context.set(null);
+  }
   private refresh():void{
     this.model.set(this.history.document);
+    const indexed=indexVectorNodes(this.history.document);
+    const remaining=this.selectedIds().filter(id=>indexed.has(id));
+    if(remaining.length!==this.selectedIds().length){
+      this.selectedIds.set(remaining);
+      this.selectedId.set(remaining.at(-1)??null);
+    }
+    if(this.isolatedGroup()&&!indexed.has(this.isolatedGroup()!))
+      this.isolatedGroup.set(null);
     this.canUndo.set(this.history.canUndo);
     this.canRedo.set(this.history.canRedo);
     this.dirty.set(true);
@@ -167,8 +253,12 @@ export class SymbolStudioComponent {
   beginNode(event:PointerEvent,id:string):void{
     if(event.button!==0||this.activeTool()!=='select')return;
     const p=this.point(event);if(!p)return;
-    this.selectedId.set(id);this.context.set(null);
-    this.beginGesture(event,{id,pointerId:event.pointerId,start:p,
+    this.choose(id,event);
+    if(event.shiftKey||event.ctrlKey||event.metaKey){
+      event.preventDefault();event.stopPropagation();return;
+    }
+    const target=this.selectedId()!;
+    this.beginGesture(event,{id:target,pointerId:event.pointerId,start:p,
       source:this.model(),handle:'move'});
   }
   beginHandle(event:PointerEvent,handle:Handle):void{
@@ -191,7 +281,9 @@ export class SymbolStudioComponent {
     if(event.button!==0)return;
     const p=this.point(event);if(!p)return;
     this.context.set(null);
-    if(this.activeTool()==='select'){this.selectedId.set(null);return;}
+    if(this.activeTool()==='select'){
+      this.selectedId.set(null);this.selectedIds.set([]);return;
+    }
     this.drawing={pointerId:event.pointerId,start:p,current:p};
     this.drawingPreview.set({start:p,end:p});
     this.capture(event);
@@ -269,6 +361,11 @@ export class SymbolStudioComponent {
   private createFromGesture(a:Vector2,b:Vector2):void{
     if(this.activeTool()==='select')return;
     const name=this.activeTool(),id=randomId(name);
+    const focus=this.isolatedGroup();
+    if(focus){
+      a=worldToNode(this.model(),focus,a);
+      b=worldToNode(this.model(),focus,b);
+    }
     const common={id,name:name[0]!.toUpperCase()+name.slice(1),
       visible:true,transform:TRANSFORM,style:STYLE};
     const left=Math.min(a[0],b[0]),top=Math.min(a[1],b[1]);
@@ -281,8 +378,8 @@ export class SymbolStudioComponent {
     else node={...common,kind:'ellipse',
       cx:left+w/2,cy:top+h/2,rx:w/2,ry:h/2,
       style:{...STYLE,fill:'#204353'}};
-    this.execute({type:'insert',node});
-    this.selectedId.set(id);this.activeTool.set('select');this.activeState.set('BASE');
+    this.execute({type:'insert',node,...(focus?{parentId:focus}:{})});
+    this.selectedId.set(id);this.selectedIds.set([id]);this.activeTool.set('select');this.activeState.set('BASE');
     this.status.set('Created '+name+' · select handles to edit');
   }
   changeName(event:Event):void{
@@ -339,7 +436,9 @@ export class SymbolStudioComponent {
   deleteSelected():void{
     const id=this.selectedId();if(!id||this.gesture)return;
     this.execute({type:'remove',nodeId:id});
-    if(!indexVectorNodes(this.model()).has(id))this.selectedId.set(null);
+    if(!indexVectorNodes(this.model()).has(id)){
+      this.selectedId.set(null);this.selectedIds.set([]);
+    }
   }
   newSymbol():void{
     const base=starter();
@@ -350,7 +449,8 @@ export class SymbolStudioComponent {
       name:'Untitled Symbol',nodes:[blankLine],
       states:base.states.map(state=>({...state,overrides:{}}))});
     this.history=new SymbolEditHistory(def);this.model.set(def);
-    this.selectedId.set('starter-line');this.activeState.set('BASE');
+    this.selectedId.set('starter-line');this.selectedIds.set(['starter-line']);
+    this.isolatedGroup.set(null);this.activeState.set('BASE');
     this.canUndo.set(false);this.canRedo.set(false);this.dirty.set(true);
     this.status.set('New symbol · edit elements and states, then Save');
   }
@@ -384,41 +484,71 @@ export class SymbolStudioComponent {
       const doc=parseVectorSymbolJson(await file.text());
       this.history=new SymbolEditHistory(doc);this.model.set(doc);
       this.canUndo.set(false);this.canRedo.set(false);
-      this.selectedId.set(null);this.activeState.set('BASE');this.dirty.set(true);
+      this.selectedId.set(null);this.selectedIds.set([]);
+      this.isolatedGroup.set(null);this.activeState.set('BASE');this.dirty.set(true);
       this.status.set('Imported '+doc.name+' · Save to retain in browser');
     }catch(err){this.status.set('Import rejected: '+String(err));}
   }
   showContext(event:MouseEvent,id:string):void{
     event.preventDefault();event.stopPropagation();
-    this.selectedId.set(id);
-    this.context.set({id,x:Math.min(innerWidth-180,event.clientX),
-      y:Math.min(innerHeight-100,event.clientY)});
+    this.choose(id);
+    const selected=this.selectedId()!;
+    this.context.set({id:selected,x:Math.max(5,Math.min(innerWidth-190,event.clientX)),
+      y:Math.max(5,Math.min(innerHeight-190,event.clientY))});
   }
   duplicateSelected():void{
     const selected=this.selected();
-    if(!selected)return;
-    const id=randomId(selected.kind);
-    const node={...structuredClone(selected),id,name:selected.name+' copy',
-      transform:{...selected.transform,x:selected.transform.x+10,
-        y:selected.transform.y+10}};
-    this.execute({type:'insert',node});
-    this.selectedId.set(id);this.context.set(null);
-  }
-  isolate(id:string):void{
-    const node=indexVectorNodes(this.model()).get(id);
-    if(node?.kind==='group')this.isolatedGroup.set(id);
-    else this.selectedId.set(id);
+    if(!selected||this.gesture)return;
+    const copies:Record<string,string>={};
+    const visit=(node:VectorNode):void=>{
+      copies[node.id]=randomId(node.kind);
+      if(node.kind==='group')node.children.forEach(visit);
+    };
+    visit(selected);
+    this.execute({type:'duplicate',nodeId:selected.id,newIds:copies});
+    const copy=copies[selected.id]!;
+    if(indexVectorNodes(this.model()).has(copy)){
+      this.selectedIds.set([copy]);this.selectedId.set(copy);
+    }
     this.context.set(null);
   }
-  backToRoot():void{this.isolatedGroup.set(null);}
+  isolate(id:string):void{
+    const target=this.focusTarget(id);
+    const node=indexVectorNodes(this.model()).get(target);
+    if(node?.kind==='group'){
+      this.isolatedGroup.set(target);
+      this.selectedId.set(null);this.selectedIds.set([]);
+      this.activeTool.set('select');
+      this.status.set('Editing group '+node.name+' · Esc to exit');
+    }else this.choose(target);
+    this.context.set(null);
+  }
+  backToRoot():void{
+    const focus=this.isolatedGroup();
+    const parent=focus?nodeLocations(this.model()).get(focus)?.parentId:null;
+    this.isolatedGroup.set(parent??null);
+    this.selectedId.set(focus);this.selectedIds.set(focus?[focus]:[]);
+    this.context.set(null);
+  }
   @HostListener('window:keydown',['$event'])
   onKey(event:KeyboardEvent):void{
     if((event.target as HTMLElement)?.closest('input,select,textarea'))return;
     if(event.key==='Escape'){
       if(this.gesture){this.history.cancelGesture();this.gesture=null;this.model.set(this.history.document);}
-      else if(this.isolatedGroup())this.isolatedGroup.set(null);
+      else if(this.isolatedGroup())this.backToRoot();
       else this.context.set(null);
       this.drawing=null;this.drawingPreview.set(null);return;
+    }
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='g'){
+      event.preventDefault();
+      if(event.shiftKey)this.ungroupSelected();else this.groupSelected();
+      return;
+    }
+    if(event.key==='F10'&&event.shiftKey&&this.selectedId()){
+      event.preventDefault();
+      const id=this.selectedId()!;
+      this.context.set({id,x:Math.max(12,innerWidth/2-90),y:Math.max(12,innerHeight/2-60)});
+      return;
     }
     if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){
       event.preventDefault();if(event.shiftKey)this.redo();else this.undo();return;

@@ -3,6 +3,7 @@
  * Every interactive gesture previews against a fixed base snapshot and commits
  * to Undo exactly once; pointermove must never persist/serialize full projects.
  */
+import {groupVectorNodes,ungroupVectorNode,duplicateVectorSubtree} from './symbol-studio-grouping.ts';
 import {parseVectorSymbol,indexVectorNodes,
   type VectorSymbol,type VectorNode,type NodeOverride} from './symbol-studio-model.ts';
 
@@ -11,6 +12,11 @@ export type OverrideField=
   'transform.x'|'transform.y'|'transform.rotation'|'transform.scaleX'|
   'transform.scaleY'|'transform.pivot';
 export type SymbolEdit=
+  |{readonly type:'group';readonly nodeIds:readonly string[];
+    readonly groupId:string;readonly name?:string}
+  |{readonly type:'ungroup';readonly groupId:string}
+  |{readonly type:'duplicate';readonly nodeId:string;
+    readonly newIds:Readonly<Record<string,string>>}
   |{readonly type:'insert';readonly node:VectorNode;
     readonly parentId?:string;readonly at?:number}
   |{readonly type:'replace';readonly node:VectorNode}
@@ -73,7 +79,13 @@ function removeField(value:NodeOverride,field:OverrideField):NodeOverride{
 export function applySymbolEdit(doc:VectorSymbol,edit:SymbolEdit):VectorSymbol{
   const nodes=indexVectorNodes(doc);
   let next:VectorSymbol;
-  if(edit.type==='insert'){
+  if(edit.type==='group'){
+    next=groupVectorNodes(doc,edit.nodeIds,edit.groupId,edit.name);
+  }else if(edit.type==='ungroup'){
+    next=ungroupVectorNode(doc,edit.groupId);
+  }else if(edit.type==='duplicate'){
+    next=duplicateVectorSubtree(doc,edit.nodeId,edit.newIds);
+  }else if(edit.type==='insert'){
     if(nodes.has(edit.node.id))throw Error('Node ID already exists');
     if(edit.parentId!==undefined&&!nodes.has(edit.parentId))throw Error('Unknown group parent');
     next={...doc,nodes:insertNode(doc.nodes,edit.parentId,edit.node,edit.at)};
