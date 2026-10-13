@@ -110,6 +110,11 @@ export class SymbolStudioComponent {
   private gesture:Gesture|null=null;
   private drawing:{pointerId:number;start:Vector2;current:Vector2}|null=null;
   readonly drawingPreview=signal<{start:Vector2;end:Vector2}|null>(null);
+  readonly drawingBox=computed(()=>{
+    const v=this.drawingPreview();
+    return v?{x:Math.min(v.start[0],v.end[0]),y:Math.min(v.start[1],v.end[1]),
+      width:Math.abs(v.end[0]-v.start[0]),height:Math.abs(v.end[1]-v.start[1])}:null;
+  });
 
   setTool(tool:Tool):void{this.activeTool.set(tool);this.context.set(null);}
   setState(id:string):void{
