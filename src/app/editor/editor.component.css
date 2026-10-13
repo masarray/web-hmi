@@ -365,3 +365,19 @@ button.primary{background:#276785;color:#f4fbff;border-color:#3985a9}
 .trend-message{padding:10px 18px;margin:0;border-top:1px solid #304c5d;color:#abc7d5}
 .trend-error{color:#ff9f9f;margin:8px 18px}
 @media(max-width:900px){.trend-toolbar input,.trend-add input{min-width:105px}}
+
+/* V2 port-anchored electrical wiring; all geometry is in project canvas space. */
+.canvas-toolbar .connection-pending{font-size:10px;color:#ffd38b;
+ padding:5px 8px;border:1px solid #896944;border-radius:4px;
+ background:#40321b;white-space:nowrap}
+.port-wire-line{vector-effect:non-scaling-stroke;transition:stroke .12s ease}
+.port-wire-line.active{stroke:#ffd18a;stroke-width:4.5}
+.port-wire-hit{cursor:pointer}
+.port-wire-hit:focus-visible{outline:2px solid #f4c77c}
+[data-vector-port]{cursor:crosshair}
+[data-vector-port].port-pending circle:first-child{stroke-width:2.8}
+.wire-inspector p{font-size:11px;line-height:1.55;color:#98b2c0}
+.wire-endpoint-label{overflow-wrap:anywhere;margin:9px 0;padding:10px 9px;
+ font-size:11px;color:#dfedf4;background:#142b39;border:1px solid #38576a;
+ border-radius:5px}
+.wire-arrow{font-size:10px;color:#eacb87}
