@@ -1377,6 +1377,8 @@ export class EditorComponent implements OnDestroy {
   }
   @HostListener('window:keydown',['$event'])
   shortcut(e:KeyboardEvent):void {
+    // Symbol Studio owns keyboard focus, Undo/Redo and Delete while open.
+    if(this.symbolStudioOpen())return;
     const node=e.target as HTMLElement|null;
     if (node?.closest('input,textarea,[contenteditable="true"]')) return;
     const modifier=e.ctrlKey||e.metaKey;
