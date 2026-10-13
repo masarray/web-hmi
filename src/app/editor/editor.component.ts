@@ -20,6 +20,7 @@ import {evaluatePage,evaluatePartAppearance,updateTagSample,
   type VisualState,type PartEffect,type PartAppearance} from './visual-runtime';
 import { duplicateShape, reorderShape, renamePage, renameProject, deletePage } from './actions';
 import { alignObjects, distributeObjects, moveObjects, deleteObjects, type Align, type Axis } from './selection-ops';
+import {SymbolStudioComponent} from './symbol-studio.component';
 
 const STORAGE_KEY='web-hmi.project.v1';
 const MODBUS_KEY='web-hmi.modbus-map.v1';
@@ -62,7 +63,7 @@ type Drag={id:string;pointerId:number;startX:number;startY:number;original:Shape
 type DragPreview={id:string;x:number;y:number;width:number;height:number};
 
 @Component({
-  selector:'hmi-root', standalone:true, imports:[],
+  selector:'hmi-root', standalone:true, imports:[SymbolStudioComponent],
   templateUrl:'./editor.component.html',
   styleUrl:'./editor.component.css',
   changeDetection:ChangeDetectionStrategy.OnPush
@@ -186,6 +187,7 @@ export class EditorComponent implements OnDestroy {
   private alarmTimer:ReturnType<typeof setInterval>|null=null;
   readonly mappingOpen=signal(false);
   readonly symbolBuilderOpen=signal(false);
+  readonly symbolStudioOpen=signal(false);
   readonly symbolBuilderName=signal('My Circuit Breaker');
   readonly symbolBuilderMoving=signal('');
   readonly symbolBuilderPivotX=signal(0);
