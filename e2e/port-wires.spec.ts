@@ -14,7 +14,7 @@ test('HMI V2 attaches wire to two symbol ports, updates on resize and retains po
   const nodes=page.locator('g.canvas-node:has(svg[data-vector-symbol-id="user-cb-starter"])');
   await expect(nodes).toHaveCount(2);
 
-  const connect=page.getByRole('button',{name:'Connect electrical ports'});
+  const connect=page.getByRole('button',{name:'Draw electrical wires'});
   await connect.click();
   await expect(connect).toHaveAttribute('aria-pressed','true');
   await nodes.nth(0).locator('[data-vector-port=bottom] circle').first().click();
@@ -67,10 +67,10 @@ test('wire can be selected and deleted with Undo restoring topology',async({page
   const palette=page.getByRole('button',{name:'Add V2 Connected Switch'});
   await palette.click();await palette.click();
   const nodes=page.locator('g.canvas-node:has(svg[data-vector-symbol-id="user-cb-starter"])');
-  await page.getByRole('button',{name:'Connect electrical ports'}).click();
+  await page.getByRole('button',{name:'Draw electrical wires'}).click();
   await nodes.nth(0).locator('[data-vector-port=bottom] circle').first().click();
   await nodes.nth(1).locator('[data-vector-port=top] circle').first().click();
-  await page.getByRole('button',{name:'Connect electrical ports'}).click();
+  await page.getByRole('button',{name:'Draw electrical wires'}).click();
   const path=page.locator('path.port-wire-hit');
   await expect(path).toHaveCount(1);
   // SVG DOM pointerdown at an in-path location (middle of its orthogonal elbow).
