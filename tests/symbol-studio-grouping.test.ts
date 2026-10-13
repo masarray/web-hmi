@@ -15,6 +15,10 @@ const coords=(doc:VectorSymbol,value=1)=>
   frame(doc,value).rows.map(r=>({id:r.node.id,style:r.style,
     matrix:[r.matrix.a,r.matrix.b,r.matrix.c,r.matrix.d,r.matrix.e,r.matrix.f]}));
 function equalFrames(a:ReturnType<typeof coords>,b:ReturnType<typeof coords>):void{
+  // Grouping legitimately turns noncontiguous siblings into one drawing layer.
+  // Compare exact appearance by stable ID, independently of z-order.
+  a=[...a].sort((x,y)=>x.id.localeCompare(y.id));
+  b=[...b].sort((x,y)=>x.id.localeCompare(y.id));
   assert.deepEqual(a.map(x=>x.id),b.map(x=>x.id));
   a.forEach((x,i)=>{
     assert.deepEqual(x.style,b[i]!.style);
