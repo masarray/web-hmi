@@ -1,0 +1,62 @@
+import {test,expect} from '@playwright/test';
+
+test('click source and target electrical terminals to wire without selection dropdowns',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Open Symbol Studio'}).click();
+  await page.getByRole('button',{name:'New Symbol'}).click();
+  await page.getByRole('textbox',{name:'Symbol name'}).fill('Direct Port Switch');
+  await page.getByRole('textbox',{name:'Symbol name'}).press('Tab');
+  await page.getByRole('button',{name:'Connection Port Tool'}).click();
+  const board=page.locator('svg.studio-svg'),rect=await board.boundingBox();
+  expect(rect).not.toBeNull();
+  await page.mouse.click(rect!.x+rect!.width/2,rect!.y+rect!.height*.2);
+  await page.mouse.click(rect!.x+rect!.width/2,rect!.y+rect!.height*.8);
+  await page.getByRole('button',{name:'Save Symbol Studio'}).click();
+  await page.getByRole('button',{name:'Back to HMI Editor'}).click();
+  const add=page.getByRole('button',{name:'Add V2 Direct Port Switch'});
+  await expect(add).toBeVisible();
+  await add.click();await add.click();
+  const nodes=page.locator('g.canvas-node');
+  await expect(nodes.locator('svg[data-vector-symbol-id]')).toHaveCount(2);
+  // Separate the instances to ensure hit areas do not overlap.
+  await page.locator('.layers button').filter({hasText:'Direct Port Switch'}).last().click();
+  const moving=nodes.last(),box=await moving.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x+box!.width/2+270,box!.y+box!.height/2+80,{steps:8});
+  await page.mouse.up();
+  await page.getByRole('button',{name:'Wire terminals on canvas'}).click();
+  const sources=page.locator('g.direct-port[data-connect-port=P2]');
+  await expect(sources).toHaveCount(2);
+  await sources.first().locator('circle').first().click({force:true});
+  await expect(page.getByRole('status')).toContainText('Source selected');
+  await sources.last().locator('circle').first().click({force:true});
+  const attached=page.locator('g.attached-wire');
+  await expect(attached).toHaveCount(1);
+  await expect(page.getByRole('status')).not.toContainText('Source selected');
+  const path=await attached.locator('path').getAttribute('d');
+  await page.getByRole('button',{name:'Undo',exact:false}).first().click();
+  await expect(attached).toHaveCount(0);
+  await page.getByRole('button',{name:'Redo',exact:false}).first().click();
+  await expect(attached).toHaveCount(1);
+  await expect(attached.locator('path')).toHaveAttribute('d',path!);
+  const exportPromise=page.waitForEvent('download');
+  await page.getByRole('button',{name:'⇩ Export',exact:true}).click();
+  const stream=await (await exportPromise).createReadStream();let data='';
+  for await(const chunk of stream)data+=chunk.toString();
+  const project=JSON.parse(data);
+  expect(project.pages[0].wires).toHaveLength(1);
+  expect(project.pages[0].wires[0].from.portId).toBe('P2');
+  expect(project.pages[0].wires[0].to.portId).toBe('P2');
+  await page.getByRole('button',{name:/Preview/}).click();
+  await expect(attached).toHaveCount(1);
+});
+
+test('wiring mode cancellation creates no dangling project wires',async({page})=>{
+  await page.goto('/');
+  await page.getByRole('button',{name:'Wire terminals on canvas'}).click();
+  await expect(page.getByRole('button',{name:'Wire terminals on canvas'})).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('button',{name:'Wire terminals on canvas'}).click();
+  await expect(page.getByRole('button',{name:'Wire terminals on canvas'})).toHaveAttribute('aria-pressed','false');
+});
