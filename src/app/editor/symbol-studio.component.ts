@@ -485,35 +485,64 @@ export class SymbolStudioComponent {
   }
   showContext(event:MouseEvent,id:string):void{
     event.preventDefault();event.stopPropagation();
-    this.selectedId.set(id);
-    this.context.set({id,x:Math.min(innerWidth-180,event.clientX),
-      y:Math.min(innerHeight-100,event.clientY)});
+    this.choose(id);
+    const selected=this.selectedId()!;
+    this.context.set({id:selected,x:Math.max(5,Math.min(innerWidth-190,event.clientX)),
+      y:Math.max(5,Math.min(innerHeight-190,event.clientY))});
   }
   duplicateSelected():void{
     const selected=this.selected();
-    if(!selected)return;
-    const id=randomId(selected.kind);
-    const node={...structuredClone(selected),id,name:selected.name+' copy',
-      transform:{...selected.transform,x:selected.transform.x+10,
-        y:selected.transform.y+10}};
-    this.execute({type:'insert',node});
-    this.selectedId.set(id);this.context.set(null);
-  }
-  isolate(id:string):void{
-    const node=indexVectorNodes(this.model()).get(id);
-    if(node?.kind==='group')this.isolatedGroup.set(id);
-    else this.selectedId.set(id);
+    if(!selected||this.gesture)return;
+    const copies:Record<string,string>={};
+    const visit=(node:VectorNode):void=>{
+      copies[node.id]=randomId(node.kind);
+      if(node.kind==='group')node.children.forEach(visit);
+    };
+    visit(selected);
+    this.execute({type:'duplicate',nodeId:selected.id,newIds:copies});
+    const copy=copies[selected.id]!;
+    if(indexVectorNodes(this.model()).has(copy)){
+      this.selectedIds.set([copy]);this.selectedId.set(copy);
+    }
     this.context.set(null);
   }
-  backToRoot():void{this.isolatedGroup.set(null);}
+  isolate(id:string):void{
+    const target=this.focusTarget(id);
+    const node=indexVectorNodes(this.model()).get(target);
+    if(node?.kind==='group'){
+      this.isolatedGroup.set(target);
+      this.selectedId.set(null);this.selectedIds.set([]);
+      this.activeTool.set('select');
+      this.status.set('Editing group '+node.name+' · Esc to exit');
+    }else this.choose(target);
+    this.context.set(null);
+  }
+  backToRoot():void{
+    const focus=this.isolatedGroup();
+    const parent=focus?nodeLocations(this.model()).get(focus)?.parentId:null;
+    this.isolatedGroup.set(parent??null);
+    this.selectedId.set(focus);this.selectedIds.set(focus?[focus]:[]);
+    this.context.set(null);
+  }
   @HostListener('window:keydown',['$event'])
   onKey(event:KeyboardEvent):void{
     if((event.target as HTMLElement)?.closest('input,select,textarea'))return;
     if(event.key==='Escape'){
       if(this.gesture){this.history.cancelGesture();this.gesture=null;this.model.set(this.history.document);}
-      else if(this.isolatedGroup())this.isolatedGroup.set(null);
+      else if(this.isolatedGroup())this.backToRoot();
       else this.context.set(null);
       this.drawing=null;this.drawingPreview.set(null);return;
+    }
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='g'){
+      event.preventDefault();
+      if(event.shiftKey)this.ungroupSelected();else this.groupSelected();
+      return;
+    }
+    if(event.key==='F10'&&event.shiftKey&&this.selectedId()){
+      event.preventDefault();
+      const id=this.selectedId()!;
+      this.context.set({id,x:Math.max(12,innerWidth/2-90),y:Math.max(12,innerHeight/2-60)});
+      return;
     }
     if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){
       event.preventDefault();if(event.shiftKey)this.redo();else this.undo();return;
